@@ -169,40 +169,40 @@ def mkExistsFVars (xs : Array Expr) (body : Expr) : MetaM Expr :=
 def foldAnd (xs : Array Expr) : MetaM Expr := do
   xs.pop.foldrM (fun x acc => mkAppM ``And #[x, acc]) xs.back!
 
-def mkClausesConjunction (clusters : Std.HashMap Nat (Std.HashSet Nat)) (c : Clause) : ProverM Expr := do
-  let mut clauseList := []
-  for (rep, litIdxs) in clusters do
-    let mut lits := (litIdxs.toList).map (fun idx => c.lits[idx]!)
-    let litsOr := Clause.litsToExpr lits
-    clauseList := litsOr :: clauseList
-  let clauseArray := clauseList.toArray
-  let names := (Array.range' 0 (clauseArray.size - 1)).map fun i => Name.mkSimple s!"p{i}"
-  let mut ps := #[]
-  for i in [0:clauseArray.size - 1] do
-    let fvarId ← mkFreshFVarId
-    let lctx' := (← getLCtx).mkLocalDecl fvarId (Name.mkSimple s!"p{i}") (mkConst ``Bool)
-    ps := ps.push (Expr.fvar fvarId)
-    addAssertionFVar fvarId
-  trace[duper.rule.split] "ps: {ps}"
-  let mut clauses := []
-  for idx in [:clauseArray.size - 1] do
-    clauses := (← mkArrow (← mkEq ps[idx]! (mkConst ``Bool.true)) clauseArray[idx]!) :: clauses
-  clauses := (← mkArrow (← foldAnd (← ps.mapM (fun p => return ← mkEq p (mkConst ``Bool.false)))) clauseArray[clauseArray.size - 1]!) :: clauses
-  mkExistsFVars ps (← foldAnd clauses.toArray)
-  -- withLocalDeclsD (names.map fun n => (n, fun _ => pure (mkConst ``Bool))) fun ps => do
-  --   trace[duper.rule.split] "ps: {ps}"
-  --   let mut clauses := []
-  --   for idx in [:clauseArray.size - 1] do
-  --     clauses := (← mkArrow (← mkEq ps[idx]! (mkConst ``Bool.true)) clauseArray[idx]!) :: clauses
-  --   clauses := (← mkArrow (← foldAnd (← ps.mapM (fun p => return ← mkEq p (mkConst ``Bool.false)))) clauseArray[clauseArray.size - 1]!) :: clauses
-  --   mkExistsFVars ps (← foldAnd clauses.toArray)
+-- def mkClausesConjunction (clusters : Std.HashMap Nat (Std.HashSet Nat)) (c : Clause) : ProverM Expr := do
+--   let mut clauseList := []
+--   for (rep, litIdxs) in clusters do
+--     let mut lits := (litIdxs.toList).map (fun idx => c.lits[idx]!)
+--     let litsOr := Clause.litsToExpr lits
+--     clauseList := litsOr :: clauseList
+--   let clauseArray := clauseList.toArray
+--   let names := (Array.range' 0 (clauseArray.size - 1)).map fun i => Name.mkSimple s!"p{i}"
+--   let mut ps := #[]
+--   for i in [0:clauseArray.size - 1] do
+--     let fvarId ← mkFreshFVarId
+--     let lctx' := (← getLCtx).mkLocalDecl fvarId (Name.mkSimple s!"p{i}") (mkConst ``Bool)
+--     ps := ps.push (Expr.fvar fvarId)
+--     addAssertionFVar fvarId
+--   trace[duper.rule.split] "ps: {ps}"
+--   let mut clauses := []
+--   for idx in [:clauseArray.size - 1] do
+--     clauses := (← mkArrow (← mkEq ps[idx]! (mkConst ``Bool.true)) clauseArray[idx]!) :: clauses
+--   clauses := (← mkArrow (← foldAnd (← ps.mapM (fun p => return ← mkEq p (mkConst ``Bool.false)))) clauseArray[clauseArray.size - 1]!) :: clauses
+--   mkExistsFVars ps (← foldAnd clauses.toArray)
+--   -- withLocalDeclsD (names.map fun n => (n, fun _ => pure (mkConst ``Bool))) fun ps => do
+--   --   trace[duper.rule.split] "ps: {ps}"
+--   --   let mut clauses := []
+--   --   for idx in [:clauseArray.size - 1] do
+--   --     clauses := (← mkArrow (← mkEq ps[idx]! (mkConst ``Bool.true)) clauseArray[idx]!) :: clauses
+--   --   clauses := (← mkArrow (← foldAnd (← ps.mapM (fun p => return ← mkEq p (mkConst ``Bool.false)))) clauseArray[clauseArray.size - 1]!) :: clauses
+--   --   mkExistsFVars ps (← foldAnd clauses.toArray)
 
-def mkSplitClausesProof (clusters : Std.HashMap Nat (Std.HashSet Nat)) (premises : List Expr) (parents : List ProofParent)
-  (transferExprs : Array Expr) (c : Clause) : ProverM Expr := do
-  let mainClause ← mkClausesConjunction clusters parents[0]!.clause
-  let proof ← mkFreshExprMVar mainClause
-  proof.mvarId!.assign sorry
-  return proof
+-- def mkSplitClausesProof (clusters : Std.HashMap Nat (Std.HashSet Nat)) (premises : List Expr) (parents : List ProofParent)
+--   (transferExprs : Array Expr) (c : Clause) : ProverM Expr := do
+--   let mainClause ← mkClausesConjunction clusters parents[0]!.clause
+--   let proof ← mkFreshExprMVar mainClause
+--   proof.mvarId!.assign sorry
+--   return proof
   -- Meta.lambdaTelescope mainClause fun xs body => do
   --   let cLits := c.lits.map (fun l => l.map (fun e => e.instantiateRev xs))
   --   let (parentsLits, appliedPremises, transferExprs) ← instantiatePremises parents premises xs transferExprs
@@ -216,6 +216,32 @@ def mkSplitClausesProof (clusters : Std.HashMap Nat (Std.HashSet Nat)) (premises
   --     proofCases := proofCases.push proofCase
   --   let proof ← orCases (parentLits.map Lit.toExpr) proofCases
   --   Meta.mkLambdaFVars xs $ mkApp proof appliedPremise
+
+def mkSplitClausesProof (c1Lits c2Lits : Array Lit) (premises : List Expr) (parents : List ProofParent)
+  (transferExprs : Array Expr) (c : Clause) : MetaM Expr := do
+  let combinedOr := mkApp2 (mkConst ``Or) (Clause.litsToExpr c1Lits.toList) (Clause.litsToExpr c2Lits.toList)
+  let fullClause := c.bVarTypes.foldr (fun ty b => mkForall Name.anonymous BinderInfo.default ty b) combinedOr
+  Meta.forallTelescope fullClause fun xs body => do
+    let c1Lits := c1Lits.map (fun l => l.map (fun e => e.instantiateRev xs))
+    let c2Lits := c2Lits.map (fun l => l.map (fun e => e.instantiateRev xs))
+    let (parentsLits, appliedPremises, transferExprs) ← instantiatePremises parents premises xs transferExprs
+    let parentLits := parentsLits[0]!
+    let appliedPremise := appliedPremises[0]!
+    let mut proofCases : Array Expr := Array.mkEmpty parentLits.size
+    for i in [:parentLits.size] do
+      let lit := parentLits[i]!
+      if c1Lits.contains lit then
+        let j := c1Lits.findIdx (fun l => l == lit)
+        let proofCase ← Meta.withLocalDeclD `h lit.toExpr fun h => do
+          Meta.mkLambdaFVars #[h] $ ← splitOrIntroLeft c1Lits c2Lits j h
+        proofCases := proofCases.push proofCase
+      else -- `lit` is not the equality to be removed
+        let j := c2Lits.findIdx (fun l => l == lit)
+        let proofCase ← Meta.withLocalDeclD `h lit.toExpr fun h => do
+          Meta.mkLambdaFVars #[h] $ ← splitOrIntroRight c1Lits c2Lits j h
+        proofCases := proofCases.push proofCase
+    let proof ← orCases (parentLits.map Lit.toExpr) proofCases
+    Meta.mkLambdaFVars xs $ mkApp proof appliedPremise
 
 def mkSplitProof (litIdxs : Std.HashSet Nat) (premises : List Expr) (parents : List ProofParent)
   (transferExprs : Array Expr) (c : Clause) : MetaM Expr := do
@@ -240,7 +266,10 @@ def splitWithLits (given : Clause) (c : MClause) (clusters : Std.HashMap Nat (St
     let ug ← unifierGenerator #[]
     let loaded ← getLoadedClauses
     let mut clauses := []
-    -- let fullProof := mkSplitClausesProof clusters
+    let mut litArrays := Array.mkEmpty 2
+    for (rep, litIdxs) in clusters do
+      litArrays := litArrays.push $ (litIdxs.toArray).map (fun idx => c.lits[idx]!)
+    let splitProof := mkSplitClausesProof litArrays[0]! litArrays[1]!
     let fvarId ← mkFreshFVarId
     let lctx' := (← getLCtx).mkLocalDecl fvarId (Name.mkSimple s!"p") (mkConst ``Bool)
     let mut splitLit := SplitLit.mk fvarId false
@@ -249,7 +278,7 @@ def splitWithLits (given : Clause) (c : MClause) (clusters : Std.HashMap Nat (St
       let yC := do
         setLoadedClauses loaded
         let newMC := MClause.mk lits
-        yieldClauseTemp splitLit newMC "split" none --$ mkSplitProof litIdxs
+        yieldSplitClause splitLit newMC "split" none splitProof --$ mkSplitProof litIdxs
       clauses := (ClauseStream.mk ug given yC "split") :: clauses
       splitLit := SplitLit.mk fvarId true
     -- return #[ClauseStream.mk ug given yC "split"]

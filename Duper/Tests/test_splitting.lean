@@ -88,6 +88,7 @@ set_option trace.duper.setOfSupport.debug true in
 set_option trace.duper.printProof true in
 set_option trace.duper.proofReconstruction true in
 set_option duper.split true in
+-- set_option trace.duper.split true in
 theorem cleanest_split (x y : Prop) (h1 : x) (h2 : y) : x ∧ y := by duper [h1, h2]
 
 #print cleanest_split
@@ -97,31 +98,38 @@ set_option trace.duper.setOfSupport.debug true in
 set_option trace.duper.printProof true in
 set_option trace.duper.proofReconstruction true in
 set_option duper.split true in
-theorem long_split (w x y z : Prop) (h1 : x) (h2 : y) (h3 : w) (h4 : z) : x ∧ y ∧ w ∧ z := by duper [h1, h2, h3, h4]
+theorem cleanest_split2 (w x y z : Prop) (h1 : x) (h2 : y) (h3 : y = w) (h4 : x = z) : x ∧ (y = w) ∧ (x = z) ∧ y := by duper [h1, h2, h3, h4]
+
+-- set_option trace.duper.prover.saturate true in
+-- set_option trace.duper.setOfSupport.debug true in
+-- set_option trace.duper.printProof true in
+-- set_option trace.duper.proofReconstruction true in
+-- set_option duper.split true in
+-- theorem long_split (w x y z : Prop) (h1 : x) (h2 : y) (h3 : w) (h4 : z) : x ∧ y ∧ w ∧ z := by duper [h1, h2, h3, h4]
 
 -- theorem potentially_split (f : Int → Int → Prop) (x : Int) : f x 0 ∨ f x 1 :=
 
-set_option duper.split true in
-tptp' testingts "../CASC-30/THF/TNE/SEV244^6.p" by duper [*] {portfolioInstance := 9}
+-- set_option duper.split true in
+-- tptp' testingts "../CASC-30/THF/TNE/SEV244^6.p" by duper [*] {portfolioInstance := 9}
 
-set_option duper.split true in
-tptp' testingts "../CASC-30/THF/TEQ/AGT030^1.p" by duper [*] {portfolioInstance := 9}
+-- set_option duper.split true in
+-- tptp' testingts "../CASC-30/THF/TEQ/AGT030^1.p" by duper [*] {portfolioInstance := 9}
 
 -- set_option maxHeartbeats 2000000 in
 -- set_option duper.split true in
-set_option trace.duper.printProof true in
-theorem H_.cTHM2A_pme : ¬∀ (K : (Iota → Prop) → Iota → Prop),
-    (∀ (Xx Xy : Iota → Prop), (∀ (Xx0 : Iota), Xx Xx0 → Xy Xx0) → ∀ (Xx0 : Iota), K Xx Xx0 → K Xy Xx0) →
-      ∀ (Xx : Iota),
-        K (fun Xx0 => ∃ S, (∀ (Xx1 : Iota), S Xx1 → K S Xx1) ∧ S Xx0) Xx ↔ ∃ S, (∀ (Xx0 : Iota), S Xx0 → K S Xx0) ∧ S Xx → False := by duper [*] {portfolioInstance := 9}
+-- set_option trace.duper.printProof true in
+-- theorem H_.cTHM2A_pme : ¬∀ (K : (Iota → Prop) → Iota → Prop),
+--     (∀ (Xx Xy : Iota → Prop), (∀ (Xx0 : Iota), Xx Xx0 → Xy Xx0) → ∀ (Xx0 : Iota), K Xx Xx0 → K Xy Xx0) →
+--       ∀ (Xx : Iota),
+--         K (fun Xx0 => ∃ S, (∀ (Xx1 : Iota), S Xx1 → K S Xx1) ∧ S Xx0) Xx ↔ ∃ S, (∀ (Xx0 : Iota), S Xx0 → K S Xx0) ∧ S Xx → False := by duper [*] {portfolioInstance := 9}
 
-set_option trace.duper.prover.saturate true in
-set_option trace.duper.printProof true in
-set_option trace.duper.proofReconstruction true in
-set_option duper.split true in
-theorem longer_split (w x y z a b c d e f g h x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 : Prop) (h1 : w) (h2 : x) (h3 : y) (h4 : z) (h5 : a) (h6 : b) (h7 : c) (h8 : d)
-  (h9 : e) (h10 : f) (h11 : g) (h12 : h) (j1 : x1) (j2 : x2) (j3 : x3) (j4 : x4) (j5 : x5) (j6 : x6) (j7 : x7) (j8 : x8) (j9 : x9) (j10 : x10)
-  : w ∧ x ∧ y ∧ z ∧ a ∧ b ∧ c ∧ d ∧ e ∧ f ∧ g ∧ h ∧ x1 ∧ x2 ∧ x3 ∧ x4 ∧ x5 ∧ x6 ∧ x7 ∧ x8 ∧ x9 ∧ x10 := by duper [*]
+-- set_option trace.duper.prover.saturate true in
+-- set_option trace.duper.printProof true in
+-- set_option trace.duper.proofReconstruction true in
+-- set_option duper.split true in
+-- theorem longer_split (w x y z a b c d e f g h x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 : Prop) (h1 : w) (h2 : x) (h3 : y) (h4 : z) (h5 : a) (h6 : b) (h7 : c) (h8 : d)
+--   (h9 : e) (h10 : f) (h11 : g) (h12 : h) (j1 : x1) (j2 : x2) (j3 : x3) (j4 : x4) (j5 : x5) (j6 : x6) (j7 : x7) (j8 : x8) (j9 : x9) (j10 : x10)
+--   : w ∧ x ∧ y ∧ z ∧ a ∧ b ∧ c ∧ d ∧ e ∧ f ∧ g ∧ h ∧ x1 ∧ x2 ∧ x3 ∧ x4 ∧ x5 ∧ x6 ∧ x7 ∧ x8 ∧ x9 ∧ x10 := by duper [*]
 
 -- set_option trace.duper.prover.saturate true in
 -- set_option duper.split true in
@@ -162,17 +170,17 @@ theorem longer_split (w x y z a b c d e f g h x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 : P
 -- theorem test_split (a b : (α → α) → α → α) (f g h j : α → α) :
 -- (∀ x, a f x = b g x) = (∀ x, a f x = b g x) ∧ (∀ x, h x = j x) = (∀ x, h x = j x) := by duper
 
-set_option trace.duper.rule.split true in
-set_option duper.split true in
-theorem puzzle1 {ι : Type} (johanna : ι) (bill : ι) (peanuts : ι)
-  (food : ι → Prop) (alive : ι → Prop)
-  (likes : ι → ι → Prop) (eats : ι → ι → Prop) (was_killed_by : ι → ι → Prop)
-  (h1 : ∀ x, food x → likes johanna x)
-  (h2 : ∀ x, (∃ y, eats y x ∧ ¬ was_killed_by y x) → food x)
-  (h3 : eats bill peanuts)
-  (h4 : alive bill)
-  (h5 : ∀ y, alive y → ∀ x, ¬ was_killed_by y x) :
-likes johanna peanuts := by duper [*]
+-- set_option trace.duper.rule.split true in
+-- set_option duper.split true in
+-- theorem puzzle1 {ι : Type} (johanna : ι) (bill : ι) (peanuts : ι)
+--   (food : ι → Prop) (alive : ι → Prop)
+--   (likes : ι → ι → Prop) (eats : ι → ι → Prop) (was_killed_by : ι → ι → Prop)
+--   (h1 : ∀ x, food x → likes johanna x)
+--   (h2 : ∀ x, (∃ y, eats y x ∧ ¬ was_killed_by y x) → food x)
+--   (h3 : eats bill peanuts)
+--   (h4 : alive bill)
+--   (h5 : ∀ y, alive y → ∀ x, ¬ was_killed_by y x) :
+-- likes johanna peanuts := by duper [*]
 
 theorem exclude_mid (p : Prop) : (p → False) ∧ (¬p → False) → False := by
   intro h

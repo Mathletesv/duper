@@ -249,6 +249,7 @@ partial def mkClauseProof : List Clause → List SplitLit → PRM Expr
     if info.proof.ruleName == "split" then
       match c.assertions with
       | p :: _ =>
+        trace[duper.proofReconstruction] "Entering a split reconstruction"
         let some splitProof := info.proof.mkSplitProof
         | throwError "no split proof when necessary"
         let instTr := info.proof.transferExprs.map (fun e => e.instantiateLevelParamsArray c.paramNames req)
@@ -265,6 +266,7 @@ partial def mkClauseProof : List Clause → List SplitLit → PRM Expr
               -- `split : b ∨ c`
         let splitType ← runMetaAsPRM <| inferType split
 
+        trace[duper.proofReconstruction] "Got split: {split}"
         let .app (.app (.const ``Or _) b) c := splitType
           | throwError "split proof does not have type `Or _ _`"
         let falseTy := mkConst ``False
@@ -287,11 +289,14 @@ partial def mkClauseProof : List Clause → List SplitLit → PRM Expr
         --     mkLambdaFVars #[hc] body
         -- let caseOne ← runMetaAsPRM <| mkLambdaFVars #[hb] bodyOne
         -- let caseTwo ← runMetaAsPRM <| mkLambdaFVars #[hc]
+        trace[duper.proofReconstruction] "Got b: {b}, c: {c}"
         let caseOne ← runMetaAsPRM <| mkFreshExprMVar (← mkArrow b falseTy) .syntheticOpaque
-        runMetaAsPRM <| caseOne.mvarId!.assign sorry
+        runMetaAsPRM <| caseOne.mvarId!.assign (← runMetaAsPRM <| Meta.mkSorry (← mkArrow b falseTy) true)
         let caseTwo ← runMetaAsPRM <| mkFreshExprMVar (← mkArrow c falseTy) .syntheticOpaque
-        runMetaAsPRM <| caseTwo.mvarId!.assign sorry
+        runMetaAsPRM <| caseTwo.mvarId!.assign (← runMetaAsPRM <| Meta.mkSorry (← mkArrow b falseTy) true)
+        trace[duper.proofReconstruction] "Ready to elim: {split}, {caseOne}, {caseTwo}"
         let proof ← runMetaAsPRM <| mkAppM ``Or.elim #[split, caseOne, caseTwo]
+        trace[duper.proofReconstruction] "Finished proving a split: {proof}"
         return proof
       | _ => throwError "Created a split clause with no assertions!"
       -- let hole ← runMetaAsPRM <| mkFreshExprMVar newTarget .syntheticOpaque

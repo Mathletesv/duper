@@ -502,7 +502,7 @@ def yieldEmptyClause (as : List SplitLit) (mc : MClause) (ruleName : String) (mk
   }
   return ({c with assertions := as}, proof)
 
-def yieldSplitClause (mc : MClause) (ruleName : String) (mkProof mkSplitProof : Option ProofReconstructor)
+def yieldSplitClause (a : SplitLit) (mc : MClause) (ruleName : String) (mkProof mkSplitProof : Option ProofReconstructor)
   (transferExprs : Array Expr := #[]) (mvarIdsToRemove : List MVarId := []) : RuleM (Clause × Proof) := do
   -- Refer to `Lean.Meta.abstractMVars`
   let loadedClauses ← getLoadedClauses
@@ -533,7 +533,7 @@ def yieldSplitClause (mc : MClause) (ruleName : String) (mkProof mkSplitProof : 
     mkSplitProof := mkSplitProof,
     transferExprs := transferExprs
   }
-  return (c, proof)
+  return ({c with assertions := a :: c.assertions}, proof)
 
 def compare (s t : Expr) (alreadyReduced : Bool) : RuleM Comparison := do
   let ord ← getOrder

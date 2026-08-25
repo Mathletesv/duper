@@ -74,6 +74,20 @@ def orIntro (lits : Array Expr) (i : Nat) (proof : Expr) : MetaM Expr := do
     tyR := mkApp2 (mkConst ``Or) lits[lits.size-j]! tyR
   return proofRight
 
+/-- Construct a proof of `(litsLeft[0] ∨ ... ∨ litsLeft[n]) ∨ (litsRight[0] ∨ ... ∨ litsRight[m])`, given a `proof` of `litsRight[i]` -/
+def splitOrIntroRight (litsLeft litsRight : Array Lit) (i : Nat) (proof : Expr) : MetaM Expr := do
+  let proofRight ← orIntro (litsRight.map Lit.toExpr) i proof
+  let tyL := Clause.litsToExpr litsLeft.toList
+  let tyR := Clause.litsToExpr litsRight.toList
+  return mkApp3 (mkConst ``Or.inr) tyL tyR proofRight
+
+/-- Construct a proof of `(litsLeft[0] ∨ ... ∨ litsLeft[n]) ∨ (litsRight[0] ∨ ... ∨ litsRight[m])`, given a `proof` of `litsLeft[i]` -/
+def splitOrIntroLeft (litsLeft litsRight : Array Lit) (i : Nat) (proof : Expr) : MetaM Expr := do
+  let proofLeft ← orIntro (litsLeft.map Lit.toExpr) i proof
+  let tyL := Clause.litsToExpr litsLeft.toList
+  let tyR := Clause.litsToExpr litsRight.toList
+  return mkApp3 (mkConst ``Or.inl) tyL tyR proofLeft
+
 /-- Construct a proof of `lits[0] ∨ ... ∨ lits[n]`, given a `proof` of the subclause consisting of the last `i` literals -/
 def orSubclause (lits : Array Expr) (i : Nat) (proof : Expr) : MetaM Expr := do
   let mut tyR := lits[lits.size - 1]!
