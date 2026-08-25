@@ -30,10 +30,11 @@ def equalitySubsumptionWithPartner (mainPremise : MClause) (mainPremiseMVarIds :
       else return Unapplicable
     else return Unapplicable
 
-def forwardEqualitySubsumptionAtExpr (mainPremise : MClause) (pos : ClausePos)
+def forwardEqualitySubsumptionAtExpr (cAsserts : List SplitLit) (mainPremise : MClause) (pos : ClausePos)
   (potentialSubsumingClauses : Array Clause) (mainMVarIds : Array MVarId) :
   RuleM Bool := withoutModifyingMCtx do
     for potentialSubsumingClause in potentialSubsumingClauses do
+      if !(Clause.assertionSubset potentialSubsumingClause.assertions cAsserts) then continue
       let (sideMClause, cToLoad) ← prepLoadClause potentialSubsumingClause
       match ← equalitySubsumptionWithPartner mainPremise mainMVarIds pos sideMClause with
       | Unapplicable => continue
@@ -49,6 +50,7 @@ def forwardEqualitySubsumption (subsumptionTrie : SubsumptionTrie) : MSimpRule :
   let potentialSubsumingClauses := -- Only consider side clauses consisting of exactly one positive literal
     potentialSubsumingClauses.filter (fun clause => clause.lits.size = 1 && clause.lits[0]!.sign)
 
+  let cAsserts := c.assertions
   let (cMVars, c) ← loadClauseCore c
   let cMVarIds := cMVars.map Expr.mvarId!
   let fold_fn := fun acc _ pos => do
@@ -65,7 +67,7 @@ def forwardEqualitySubsumption (subsumptionTrie : SubsumptionTrie) : MSimpRule :
       -/
       let sidesAgree ← Expr.expressionsAgreeExceptAtPos c.lits[pos.lit]!.lhs c.lits[pos.lit]!.rhs pos.pos
       if(c.lits[pos.lit]!.sign && sidesAgree) then
-        forwardEqualitySubsumptionAtExpr c pos potentialSubsumingClauses cMVarIds
+        forwardEqualitySubsumptionAtExpr cAsserts c pos potentialSubsumingClauses cMVarIds
       else return false
     | true => return true -- If forwardEqualitySubsumptionAtExpr ever succeeds, then we need not check further
   -- TODO: Determine if foldGreenM is an appropriate function here or if I need one that considers all subexpressions,
@@ -79,8 +81,8 @@ def forwardEqualitySubsumption (subsumptionTrie : SubsumptionTrie) : MSimpRule :
 /-- Returns the list of clauses that givenSubsumingClause subsumes -/
 def backwardEqualitySubsumption (subsumptionTrie : SubsumptionTrie) : BackwardMSimpRule := fun givenSubsumingClause => do
   -- Return Unapplicable if givenSubsumingClause is anything other than a clause with exactly one positive literal
-  if (!givenSubsumingClause.lits[0]!.sign) then return #[]
   if (givenSubsumingClause.lits.size != 1) then return #[]
+  if (!givenSubsumingClause.lits[0]!.sign) then return #[]
 
   let potentialSubsumedClauses ← subsumptionTrie.getPotentialSubsumedClauses givenSubsumingClause
   let givenSubsumingClause ← loadClause givenSubsumingClause

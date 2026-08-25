@@ -445,7 +445,7 @@ def clausificationStep : MSimpRule := fun c => do
                   let resRight := resLits.toList.drop (c.lits.size - 1)
                   -- Temporarily use `Clause` to construct the expected type
                   -- So we don't need to supply universe parameters
-                  let resRight' := (Clause.mk #[] #[] resRight.toArray).toForallExpr
+                  let resRight' := (Clause.mk #[] #[] resRight.toArray []).toForallExpr
                   let resLits' := (resLeft.map Lit.toExpr).toArray.push resRight'
                   let dproof ← dproof h transferExprs
                   if resRight.length == 0 then

@@ -11,14 +11,16 @@ initialize Lean.registerTraceClass `duper.rule.clauseSubsumption
 def forwardClauseSubsumption (subsumptionTrie : SubsumptionTrie) : MSimpRule := fun c => do
   let potentialSubsumingClauses ← subsumptionTrie.getPotentialSubsumingClauses c
   trace[duper.rule.clauseSubsumption] "number of potentialSubsumingClauses for {c}: {potentialSubsumingClauses.size}"
+  let cAsserts := c.assertions
   let (cMVars, c) ← loadClauseCore c
   let cMVarIds := cMVars.map Expr.mvarId!
   let fold_fn := fun acc nextClause => do
     match acc with
     | false =>
       conditionallyModifyingLoadedClauses do
+        let nextAsserts := nextClause.assertions
         let nextClause ← loadClause nextClause
-        if ← subsumptionCheck nextClause c cMVarIds then
+        if Clause.assertionSubset nextAsserts cAsserts && (← subsumptionCheck nextClause c cMVarIds) then
           trace[duper.rule.clauseSubsumption] "Forward subsumption: removed {c.lits} because it was subsumed by {nextClause.lits}"
           return (true, true)
         else return (false, false)

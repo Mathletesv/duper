@@ -2,6 +2,7 @@ import Lean
 import Duper.Util.Misc
 import Duper.Expr
 import Duper.Order
+import Duper.Splitting
 
 namespace Duper
 open Lean
@@ -265,11 +266,12 @@ end Lit
 -- where `l = len(bVarTypes)`. Each Clause `c` will be
 -- associated with a proof `p`.
 -- !!!!!!!!!!!!!!!!! We keep an invariant !!!!!!!!!!!!!!!!
---               `p : c.toForallExpr`
+--               `p : c.toForallExprFull`
 structure Clause where
 (paramNames : Array Name)
 (bVarTypes : Array Expr)
 (lits : Array Lit)
+(assertions: List SplitLit)
 deriving Inhabited, BEq, Hashable
 
 structure ClausePos extends LitPos where
@@ -283,18 +285,30 @@ instance : ToMessageData ClausePos := ⟨ClausePos.format⟩
 
 namespace Clause
 
-def empty : Clause := ⟨#[], #[], #[]⟩
+def empty : Clause := ⟨#[], #[], #[], []⟩
 
 def fromSingleExpr (paramNames : Array Name) (e : Expr) : Clause :=
-  Clause.mk paramNames #[] #[Lit.fromSingleExpr e]
+  Clause.mk paramNames #[] #[Lit.fromSingleExpr e] []
 
 def litsToExpr : List Lit → Expr
 | [] => mkConst ``False
 | [l] => l.toExpr
 | l :: ls => mkApp2 (mkConst ``Or) l.toExpr (litsToExpr ls)
 
+def splitLitsToExpr : List SplitLit → Expr
+| [] => mkConst ``Bool.true
+| [l] => l.toExpr
+| l :: ls => mkApp2 (mkConst ``Bool.and) l.toExpr (splitLitsToExpr ls)
+
 def toExpr (c : Clause) : Expr :=
   litsToExpr c.lits.toList
+
+def toFullExpr (c : Clause) : MetaM Expr := do
+  let assertExpr := splitLitsToExpr c.assertions
+  let assertExpr ← mkEq assertExpr (mkConst ``Bool.true)
+  let litExpr := litsToExpr c.lits.toList
+  trace[duper.proofReconstruction] "litExpr: {litExpr}, assertExpr: {assertExpr}, bVarTypes: {c.bVarTypes}"
+  pure (Expr.forallE `a assertExpr litExpr .default)
 
 def foldM {β : Type v} {m : Type v → Type w} [Monad m]
     (f : β → Expr → ClausePos → m β) (init : β) (c : Clause) : m β := do
@@ -320,12 +334,24 @@ def instantiateLevelParamsArray (c : Clause) (paramNames : Array Name) (levels :
 def toForallExpr (c : Clause) : Expr :=
   c.bVarTypes.foldr (fun ty b => mkForall Name.anonymous BinderInfo.default ty b) c.toExpr
 
+def toForallExprFull (c : Clause) : MetaM Expr := do
+  let assertExpr ← mkEq (splitLitsToExpr c.assertions) (mkConst ``Bool.true)
+  return .forallE `hp assertExpr c.toForallExpr .default
+
+def assertionSubset (sub super : List SplitLit) : Bool :=
+  if sub.length > super.length then false
+  else
+    let total : Std.HashSet SplitLit := {}
+    let total := total.insertMany super
+    let withSub := total.insertMany sub
+    total.size == withSub.size
+
 def toLambdaExpr (c : Clause) : Expr :=
   c.bVarTypes.foldr (fun ty b => mkLambda Name.anonymous BinderInfo.default ty b) c.toExpr
 
 def fromForallExpr (paramNames : Array Name) (e : Expr) : Clause :=
   let (bvarTypes, e) := deForall e
-  ⟨paramNames, bvarTypes.toArray, (litsFromExpr e).toArray⟩
+  ⟨paramNames, bvarTypes.toArray, (litsFromExpr e).toArray, []⟩
 where
   deForall : Expr → List Expr × Expr
   | .forallE _ ty body _ => let (l, e) := deForall body; (ty::l, e)
@@ -339,7 +365,7 @@ instance : ToFormat Clause :=
 ⟨ fun c => format c.toForallExpr ⟩
 
 instance : ToMessageData Clause :=
-⟨ fun c => c.toForallExpr ⟩
+⟨ fun c => m!"{c.assertions.length} → {c.toForallExpr}" ⟩
 
 def weight (c : Clause) : Nat :=
   c.lits.foldl (fun acc lit => acc + lit.lhs.weight + lit.rhs.weight) 0

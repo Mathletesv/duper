@@ -15,6 +15,8 @@ import Duper.Rules.EqualityResolution
 import Duper.Rules.FalseElim
 import Duper.Rules.IdentBoolFalseElim
 import Duper.Rules.IdentPropFalseElim
+import Duper.Rules.Split
+import Duper.Rules.Unsat
 import Duper.Rules.Superposition
 import Duper.Rules.SyntacticTautologyDeletion1
 import Duper.Rules.SyntacticTautologyDeletion2
@@ -241,6 +243,7 @@ def inferenceRules : ProverM (List (Clause → MClause → Nat → RuleM (Array 
       clausifyPropEq,
       superposition (← getSupMainPremiseIdx) (← getSupSidePremiseIdx),
       equalityFactoring,
+      split,
       -- Prop specific rules
       falseElim,
       boolHoist,
@@ -255,6 +258,7 @@ def inferenceRules : ProverM (List (Clause → MClause → Nat → RuleM (Array 
     ]
   else
     return [
+      split,
       equalityResolution,
       clausifyPropEq,
       superposition (← getSupMainPremiseIdx) (← getSupSidePremiseIdx),
@@ -267,7 +271,8 @@ def inferenceRules : ProverM (List (Clause → MClause → Nat → RuleM (Array 
 
 def applyForwardSimpRules (givenClause : Clause) : ProverM (SimpResult Clause) := do
   for simpRule in ← forwardSimpRules do
-    match ← simpRule givenClause with
+    let res ← simpRule givenClause
+    match res with
     | Removed => return Removed
     | Applied c => return Applied c
     | Unapplicable => continue
@@ -298,15 +303,54 @@ partial def forwardSimplify (givenClause : Clause) : ProverM (Option (Clause × 
     | Unapplicable => return some (givenClause, true) -- When inhabitation reasoning is disabled, assume all types are nonempty
     | Removed => return none
 
+def splitLitsContain (ps : List SplitLit) (id : FVarId) : Bool :=
+  match ps with
+  | p :: ps' => if p.id == id then true else splitLitsContain ps' id
+  | [] => false
+
+partial def resolveAssertionEmpties : ProverM Unit := do
+  let mut old := (← get).resolvedFVars
+  while old.size > 0 do
+    trace[debug] "In resolution: {old.size}"
+    modify fun s => {s with resolvedFVars := {}}
+    for (id, one) in old do
+      trace[duper.prover.sature] "perform unsat with given clause {one}"
+      let two := (← get).assertionClauses.get! id
+      -- unsat c other
+      let mut cs := #[]
+      -- let cInfo ← getClauseInfo! given
+      -- let cNum := cInfo.number
+      let curStreams ← runRuleM do
+        let c ← loadClause one
+        unsat one two c
+      cs := cs.append curStreams
+      trace[debug] "Have clauses: {cs.size}"
+      let mut Q ← getQStreamSet
+      for stream in cs do
+        let (mc, Q') ← Q.extractClause 0 #[0, Q.nextId] stream
+        Q := Q'
+        if let some clauseProof := mc then
+          postProcessInferenceResult clauseProof
+      setQStreamSet Q
+      let mut notObsolete : Std.HashSet Clause := {}
+      for active in (← get).activeSet do
+        if !(splitLitsContain active.assertions id) then
+          notObsolete := notObsolete.insert active
+      modify fun s => {s with activeSet := notObsolete}
+    old := (← get).resolvedFVars
+  modify fun s => {s with resolvedFVars := {}}
+
 partial def saturate : ProverM Unit := do
   Core.withCurrHeartbeats $ try
     while true do
       incrementIter
+      trace[debug] "started loop iteration"
       -- Check whether this duper instance has exceeded its allocated heartbeat or iteration limit (and return if so)
       if ← checkSaturationTerminationCriterion then
         printTimeoutDebugStatements
         setResult ProverM.Result.unknown -- Instance forced to terminate prior to reaching saturation or proving the goal
         return
+      trace[debug] "checking for empty passive set"
       -- If the passive set is empty
       if (← getPassiveSet).isEmpty then
         -- ForceProbe
@@ -315,19 +359,24 @@ partial def saturate : ProverM Unit := do
         if (← getPassiveSet).isEmpty then
           setResult saturated
           break
+      trace[debug] "didn't exit early"
       -- Collect inference rules and perform inference
       let some givenClause ← chooseGivenClause
         | throwError "Saturate :: Saturation should have been checked in the beginning of the loop."
       trace[duper.prover.saturate] "Given clause: {givenClause}"
-      let some (simplifiedGivenClause, simplifiedGivenClauseSafe) ← forwardSimplify givenClause
-        | continue
-      trace[duper.prover.saturate] "Given clause after simp: {simplifiedGivenClause} (simplifiedGivenClauseSafe: {simplifiedGivenClauseSafe})"
-      if ← getInhabitationReasoningM then registerNewNonemptyTypes simplifiedGivenClause
-      if simplifiedGivenClauseSafe then backwardSimplify simplifiedGivenClause -- Only do this if simplifiedGivenClause is certainly not vacuous
-      else addPotentiallyVacuousClause simplifiedGivenClause -- We should re-evaluate simplifiedGivenClause when we learn new Nonempty type facts
-      addToActive simplifiedGivenClause simplifiedGivenClauseSafe
-      let inferenceRules ← inferenceRules
-      performInferences inferenceRules simplifiedGivenClause
+      if givenClause.lits.size != 0 then
+        let some (simplifiedGivenClause, simplifiedGivenClauseSafe) ← forwardSimplify givenClause
+          | resolveAssertionEmpties
+            continue
+        trace[duper.prover.saturate] "Given clause after simp: {simplifiedGivenClause} (simplifiedGivenClauseSafe: {simplifiedGivenClauseSafe})"
+        if ← getInhabitationReasoningM then registerNewNonemptyTypes simplifiedGivenClause
+        if simplifiedGivenClauseSafe then backwardSimplify simplifiedGivenClause -- Only do this if simplifiedGivenClause is certainly not vacuous
+        else addPotentiallyVacuousClause simplifiedGivenClause -- We should re-evaluate simplifiedGivenClause when we learn new Nonempty type facts
+        addToActive simplifiedGivenClause simplifiedGivenClauseSafe
+        resolveAssertionEmpties
+        trace[debug] "did resolution lol, {(← get).resolvedFVars.size} left"
+        let inferenceRules ← inferenceRules
+        performInferences inferenceRules simplifiedGivenClause
       -- Probe the clauseStreamHeap
       setQStreamSet <| ClauseStreamHeap.increaseFairnessCounter (← getQStreamSet)
       let fairnessCounter := (← getQStreamSet).status.fairnessCounter
@@ -336,6 +385,7 @@ partial def saturate : ProverM Unit := do
       else
         runProbe ClauseStreamHeap.heuristicProbe
       trace[duper.prover.saturate] "New active Set: {(← getActiveSet).toArray}"
+      trace[duper.prover.saturate] "New passive Set: {(← getPassiveSet).toArray}"
       continue
     catch
     | e@(Exception.internal id _)  =>

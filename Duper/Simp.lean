@@ -121,7 +121,8 @@ def BackwardMSimpRule.toBackwardSimpRule (rule : BackwardMSimpRule) : BackwardSi
   -- It is important that we remove each clause in clausesToRemove before reading the newly generated clauses
   for (c, _) in backwardSimpRes do
     trace[duper.simplification.debug] "About to remove {c} because it was simplified away"
-    removeClause c [givenClause] -- givenClause must be protected when we remove c and its descendants because givenClause was used to eliminate c
+    if Clause.assertionSubset givenClause.assertions c.assertions then
+      removeClause c [givenClause] -- givenClause must be protected when we remove c and its descendants because givenClause was used to eliminate c
     match (← getAllClauses).get? c with
     | some ci =>
       /- To match the strategy used for forward simplification, we use `ci.goalDistance` to ensure that the new clause is given the same goal distance as

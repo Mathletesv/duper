@@ -34,7 +34,8 @@ structure ClauseInfo where
 (number : Nat)
 (generationNumber : Nat) -- The total number of inference (not simplification) rules that were used to create this clause
 (goalDistance : Nat) -- min (maxGoalDistance, the minimum number of inference (not simplification) rules between the clause and the goal)
-(proof : Proof)
+(proof : Proof) -- (p -> c)
+(splitProof : Option (Nat × Proof)) -- and of new clauses (p -> c) ∧ (¬ p -> d)
 (generatingAncestors : Array Clause)
 (descendants : List Clause)
 (wasSimplified : Bool)
@@ -84,8 +85,14 @@ structure State where
      iterate through these clauses to see if any of them can be proven to not be vacuous (in which case, additional reasoning about those clauses can
      be performed) -/
   emptyClause : Option Clause := none
+  assertionClauses : Std.HashMap FVarId Clause := {}
   /- We need this field because empty clauses may contain level parameters, and we can't just use ```Clause.empty``` as
      a key to find the clauseInfo of the empty clause in ```allClauses``` -/
+  splitLitCount : Nat := 0
+  assertionFVars : Std.HashSet FVarId := {}
+  resolvedFVars : Std.HashMap FVarId Clause := {}
+  litClauseMap : Std.HashMap SplitLit Clause := {}
+  -- dummyFVar : FVarId := FVarId.mk (Name.mkSimple "dummy")
 
 abbrev ProverM := ReaderT Context $ StateRefT State MetaM
 
@@ -249,10 +256,42 @@ def setPotentiallyVacuousClauses (potentiallyVacuousClauses : ClauseSet) : Prove
 def setEmptyClause (c : Clause) : ProverM Unit :=
   modify fun s => {s with emptyClause := some c}
 
+def addAssertionFVar (fvarId : FVarId) : ProverM Unit :=
+  modify fun s => {s with assertionFVars := s.assertionFVars.insert fvarId}
+
+def addResolvingFVar (fvarId : FVarId) (c : Clause) : ProverM Unit :=
+  modify fun s => {s with resolvedFVars := s.resolvedFVars.insert fvarId c}
+
 initialize emptyClauseExceptionId : InternalExceptionId ← registerInternalExceptionId `emptyClause
 
 def throwEmptyClauseException : ProverM α :=
   throw <| Exception.internal emptyClauseExceptionId
+
+partial def addAssertionClause (c : Clause) : ProverM Unit := do
+  trace[debug] "Splitting generated an assertion clause: {c}"
+  let s ← get
+  match c.assertions with
+  | p :: _ =>
+    match s.assertionClauses.get? p.id with
+    | some d =>
+      trace[debug] "splitting matched {c} with {d} over {Expr.fvar p.id}, c has {p.sgn}"
+      match d.assertions with
+      | q :: _ =>
+        if q.sgn != p.sgn then
+          addResolvingFVar p.id c
+          -- match ps with
+          -- | _ :: _ =>
+          --   trace[debug] "Splitting is doing something"
+          --   modify fun s => {s with assertionClauses := (s.assertionClauses.erase q.id)}
+          --   addAssertionClause {c with assertions := ps}
+          -- | [] =>
+          --   trace[debug] "Splitting led to the result"
+          --   setEmptyClause {c with assertions := ps}
+          --   throwEmptyClauseException
+        else pure ()
+      | [] => throwError "Found assertion clause with no assertions"
+    | none => modify fun s => {s with assertionClauses := s.assertionClauses.insert p.id c}
+  | [] => throwError "Tried to add assertion clause with no assertions"
 
 /-- Every clause is assigned a "distance" from the goal. This distance is the shortest number of inference rules to
     obtain the clause from an assumption that was originally part of the negated goal. Goal assumptions themselves have
@@ -301,25 +340,34 @@ def addNewClause (c : Clause) (proof : Proof) (goalDistance : Nat) (generationNu
         generationNumber := generationNumber
         goalDistance := goalDistance
         proof := proof
+        splitProof := none
         generatingAncestors := generatingAncestors
         descendants := []
         wasSimplified := false
         isOrphan := false
       }
       setAllClauses (allClauses.insert c ci)
-      if ← getInhabitationReasoningM then
-        if c.lits.size == 0 && c.bVarTypes.size == 0 then
+      if c.lits.size == 0 && (!(← getInhabitationReasoningM) || c.bVarTypes.size == 0) then
+        trace[debug] "Found an almost empty clause with {c.assertions.length} assertions"
+        if c.assertions.length == 0 then
           setEmptyClause c
           throwEmptyClauseException
-        return ci
-      else
-        if c.lits.size == 0 then
-          setEmptyClause c
-          throwEmptyClauseException
-        return ci)
+        else
+          addAssertionClause c
+      return ci)
+      -- if ← getInhabitationReasoningM then
+      --   if c.lits.size == 0 && c.bVarTypes.size == 0 && c.assertions.length == 0 then
+      --     setEmptyClause c
+      --     throwEmptyClauseException
+      --   return ci
+      -- else
+      --   if c.lits.size == 0 then
+      --     setEmptyClause c
+      --     throwEmptyClauseException
+      --   return ci)
   trace[duper.prover.saturate] (
     let parentInfos := proof.parents.map (fun p => allClauses.get! p.clause)
-    m!"New clause #{ci.number} by {proof.ruleName} on {parentInfos.map (fun i => i.number)}: {c}"
+    m!"New clause #{ci.number} by {proof.ruleName} on {parentInfos.map (fun i => i.number)}: {c}, {c.assertions.length} asserts"
   )
   trace[duper.createdClauses] (
     let parentInfos := proof.parents.map (fun p => allClauses.get! p.clause)
@@ -376,9 +424,9 @@ def ProverM.runWithExprs (x : ProverM α) (es : List (Expr × Expr × Array Name
         if isFromGoal then 0
         else maxGoalDistance
       if includeInSetOfSupport then
-        addNewToPassive c {parents := #[], ruleName := "assumption", mkProof := mkProof} goalDistance 0 #[]
+        addNewToPassive c {parents := #[], ruleName := "assumption", mkProof := mkProof, mkSplitProof := none} goalDistance 0 #[]
       else
-        addNewToUnsupportedFacts c {parents := #[], ruleName := "assumption", mkProof := mkProof} goalDistance 0 #[]
+        addNewToUnsupportedFacts c {parents := #[], ruleName := "assumption", mkProof := mkProof, mkSplitProof := none} goalDistance 0 #[]
     x
 
 @[inline] def runRuleM (x : RuleM α) : ProverM.ProverM α := do

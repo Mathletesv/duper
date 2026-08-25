@@ -162,6 +162,12 @@ where
               return some (← Lean.instantiateMVars prf)
         return none
       return optExpr
+  dischargeSplitGuard? (mvarTy : Expr) : MetaM (Option Expr) := do
+    let some (eqTy, lhs, rhs) := mvarTy.eq? | return none
+    unless eqTy.isConstOf ``Bool && rhs.isConstOf ``Bool.true do return none
+    -- `whnf` on an unassigned mvar returns the mvar, so this never assigns anything.
+    unless (← whnf lhs).isConstOf ``Bool.true do return none
+    return some (← mkEqRefl (mkConst ``Bool.true))
   findInstanceForUninstantiatedMVars (prf : Expr) (fvars : Array Expr) : MetaM Bool := do
     let mvars ← Meta.getMVars prf
     let mut fvarMap : Std.HashMap Expr Expr := Std.HashMap.emptyWithCapacity
@@ -171,6 +177,8 @@ where
       if ! (← mvarId.isReadOnly) then
         let mvarTy ← Lean.instantiateMVars (← Meta.inferType (mkMVar mvarId))
         if let some e := fvarMap[mvarTy]? then
+          mvarId.assign e
+        else if let some e ← dischargeSplitGuard? mvarTy then
           mvarId.assign e
         else
           return false

@@ -103,6 +103,7 @@ structure Proof where
   parents : Array ProofParent
   ruleName : String := "unknown"
   mkProof : ProofReconstructor
+  mkSplitProof : Option ProofReconstructor
   transferExprs : Array Expr := #[]
 deriving Inhabited
 
@@ -296,6 +297,9 @@ def neutralizeMClause (c : MClause) (loadedClauses : Array LoadedClause) (transf
   let transferExprs := ftransferExprs.map (cst.lctx.mkLambda cst.fvars)
   -- process loadedClause
   let mut proofParents : Array ProofParent := #[]
+  let mut asserts := []
+  if loadedClauses.size == 0 then panic! "wtf"
+  let mut all_asserts : Std.HashSet SplitLit := {}
   for ⟨loadedClause, lmvarIds, mvarIds⟩ in loadedClauses do
     -- Restore exprmvars, but does not restore level mvars
     set {(← get) with lctx := cst.lctx, mctx := cst.mctx, fvars := cst.fvars, emap := cst.emap}
@@ -316,6 +320,10 @@ def neutralizeMClause (c : MClause) (loadedClauses : Array LoadedClause) (transf
     let lvarSubstWithExpr ← Duper.AbstractMVars.abstractExprMVars (Expr.const `_ <| lmvars.toList)
     let paramSubst := Array.mk lvarSubstWithExpr.constLevels!
     proofParents := proofParents.push ⟨instantiatedparent, loadedClause, paramSubst⟩
+    -- trace[debug] "A clause is loaded with {loadedClause.assertions.length} assertions"
+    if loadedClause.assertions.length > asserts.length then asserts := loadedClause.assertions
+    all_asserts := all_asserts.insertMany loadedClause.assertions.toArray
+  if all_asserts.size != asserts.length then asserts := all_asserts.toList
   -- Deal with universe variables differently from metavariables :
   --   Vanished mvars are not put into clause, while vanished level
   --   variables are put into the clause. This is because mvars vanish
@@ -323,7 +331,7 @@ def neutralizeMClause (c : MClause) (loadedClauses : Array LoadedClause) (transf
   --   make an unbearably long list of binders.
   let cst ← get
   let c := Clause.fromForallExpr cst.paramNames abstec
-  return (c, proofParents, transferExprs)
+  return ({c with assertions := asserts}, proofParents, transferExprs)
 
 open Duper.AbstractMVars in
 -- Note: It is expected that no mvarId that appears in mvarIdsToRemove appears in c or transferExprs
@@ -339,6 +347,9 @@ def neutralizeMClauseInhabitedReasoningOn (c : MClause) (loadedClauses : Array L
   let ftransferExprs ← transferExprs.mapM Duper.AbstractMVars.abstractExprMVars
   -- Process loadedClauses
   let mut proofParentsPre : Array ProofParent := #[]
+  let mut asserts := []
+  if loadedClauses.size == 0 then panic! "wtf"
+  let mut all_asserts : Std.HashSet SplitLit := {}
   for ⟨loadedClause, lmvarIds, mvarIds⟩ in loadedClauses do
     /-  Add `mdata` to protect the body from `getAppArgs`
         The inner part will no longer be used, it is almost dummy, except that it makes the type check
@@ -354,6 +365,11 @@ def neutralizeMClauseInhabitedReasoningOn (c : MClause) (loadedClauses : Array L
     let lvarSubstWithExpr ← Duper.AbstractMVars.abstractExprMVars (Expr.const `_ <| lmvars.toList)
     let paramSubst := Array.mk lvarSubstWithExpr.constLevels!
     proofParentsPre := proofParentsPre.push ⟨finstantiatedparent, loadedClause, paramSubst⟩
+    if loadedClause.assertions.length > asserts.length then asserts := loadedClause.assertions
+    all_asserts := all_asserts.insertMany loadedClause.assertions.toArray
+  if all_asserts.size != asserts.length then
+    let fvarId ← mkFreshFVarId
+    asserts := [SplitLit.mk fvarId true]
   -- Process inhabitationClauses
   for ⟨inhabitationClause, lmvarIds, _⟩ in inhabitationClauses do
     -- Unlike with loadedClauses, we don't want to attempt to instantiate inhabitationClauses because we may
@@ -364,6 +380,9 @@ def neutralizeMClauseInhabitedReasoningOn (c : MClause) (loadedClauses : Array L
     let lvarSubstWithExpr ← Duper.AbstractMVars.abstractExprMVars (Expr.const `_ <| lmvars.toList)
     let paramSubst := Array.mk lvarSubstWithExpr.constLevels!
     proofParentsPre := proofParentsPre.push ⟨parentExpr, inhabitationClause, paramSubst⟩
+    if inhabitationClause.assertions.length > asserts.length then asserts := inhabitationClause.assertions
+    all_asserts := all_asserts.insertMany inhabitationClause.assertions.toArray
+  if all_asserts.size != asserts.length then asserts := all_asserts.toList
   -- Process local context
   let cst ← get
   let lctx := cst.lctx
@@ -382,7 +401,7 @@ def neutralizeMClauseInhabitedReasoningOn (c : MClause) (loadedClauses : Array L
     -- `instantiatedparent = fun fvars => ((fun [vars] => parent[vars]) mvars[fvars])`
     let instantiatedparent := lctx.mkForall (fvars ++ erasedFVars) x.expr
     {x with expr := instantiatedparent})
-  return (c, proofParents, transferExprs)
+  return ({c with assertions := asserts}, proofParents, transferExprs)
 
 def yieldClause (mc : MClause) (ruleName : String) (mkProof : Option ProofReconstructor)
   (transferExprs : Array Expr := #[]) (mvarIdsToRemove : List MVarId := []) : RuleM (Clause × Proof) := do
@@ -412,6 +431,106 @@ def yieldClause (mc : MClause) (ruleName : String) (mkProof : Option ProofRecons
     parents := proofParents,
     ruleName := ruleName,
     mkProof := mkProof,
+    mkSplitProof := none,
+    transferExprs := transferExprs
+  }
+  return (c, proof)
+
+def yieldClauseTemp (a : SplitLit) (mc : MClause) (ruleName : String) (mkProof : Option ProofReconstructor)
+  (transferExprs : Array Expr := #[]) (mvarIdsToRemove : List MVarId := []) : RuleM (Clause × Proof) := do
+  -- Refer to `Lean.Meta.abstractMVars`
+  let loadedClauses ← getLoadedClauses
+  let inhabitationClauses ← getInhabitationClauses
+  let mctx ← getMCtx
+  let lctx ← getLCtx
+  let ngen ← getNGen
+  let ((c, proofParents, transferExprs), st) :=
+    if ← getInhabitationReasoningM then
+      neutralizeMClauseInhabitedReasoningOn mc loadedClauses inhabitationClauses transferExprs mvarIdsToRemove
+        { mctx := mctx, lctx := lctx, ngen := ngen, abstractLevels := true }
+    else
+      neutralizeMClause mc loadedClauses transferExprs { mctx := mctx, lctx := lctx, ngen := ngen, abstractLevels := true }
+  setNGen st.ngen
+  -- This is redundant because the `mctx` won't change
+  -- We should not reset `lctx` because fvars introduced by
+  --   `AbstractMVars` are local to it
+  setMCtx st.mctx
+
+  let mkProof := match mkProof with
+  | some mkProof => mkProof
+  | none => fun _ _ _ _ =>
+    Lean.Meta.mkSorry c.toForallExpr (synthetic := true)
+  let proof := {
+    parents := proofParents,
+    ruleName := ruleName,
+    mkProof := mkProof,
+    mkSplitProof := none,
+    transferExprs := transferExprs
+  }
+  return ({c with assertions := a :: c.assertions}, proof)
+
+def yieldEmptyClause (as : List SplitLit) (mc : MClause) (ruleName : String) (mkProof : Option ProofReconstructor)
+  (transferExprs : Array Expr := #[]) (mvarIdsToRemove : List MVarId := []) : RuleM (Clause × Proof) := do
+  -- Refer to `Lean.Meta.abstractMVars`
+  let loadedClauses ← getLoadedClauses
+  let inhabitationClauses ← getInhabitationClauses
+  let mctx ← getMCtx
+  let lctx ← getLCtx
+  let ngen ← getNGen
+  let ((c, proofParents, transferExprs), st) :=
+    if ← getInhabitationReasoningM then
+      neutralizeMClauseInhabitedReasoningOn mc loadedClauses inhabitationClauses transferExprs mvarIdsToRemove
+        { mctx := mctx, lctx := lctx, ngen := ngen, abstractLevels := true }
+    else
+      neutralizeMClause mc loadedClauses transferExprs { mctx := mctx, lctx := lctx, ngen := ngen, abstractLevels := true }
+  setNGen st.ngen
+  -- This is redundant because the `mctx` won't change
+  -- We should not reset `lctx` because fvars introduced by
+  --   `AbstractMVars` are local to it
+  setMCtx st.mctx
+
+  let mkProof := match mkProof with
+  | some mkProof => mkProof
+  | none => fun _ _ _ _ =>
+    Lean.Meta.mkSorry c.toForallExpr (synthetic := true)
+  let proof := {
+    parents := proofParents,
+    ruleName := ruleName,
+    mkProof := mkProof,
+    mkSplitProof := none,
+    transferExprs := transferExprs
+  }
+  return ({c with assertions := as}, proof)
+
+def yieldSplitClause (mc : MClause) (ruleName : String) (mkProof mkSplitProof : Option ProofReconstructor)
+  (transferExprs : Array Expr := #[]) (mvarIdsToRemove : List MVarId := []) : RuleM (Clause × Proof) := do
+  -- Refer to `Lean.Meta.abstractMVars`
+  let loadedClauses ← getLoadedClauses
+  let inhabitationClauses ← getInhabitationClauses
+  let mctx ← getMCtx
+  let lctx ← getLCtx
+  let ngen ← getNGen
+  let ((c, proofParents, transferExprs), st) :=
+    if ← getInhabitationReasoningM then
+      neutralizeMClauseInhabitedReasoningOn mc loadedClauses inhabitationClauses transferExprs mvarIdsToRemove
+        { mctx := mctx, lctx := lctx, ngen := ngen, abstractLevels := true }
+    else
+      neutralizeMClause mc loadedClauses transferExprs { mctx := mctx, lctx := lctx, ngen := ngen, abstractLevels := true }
+  setNGen st.ngen
+  -- This is redundant because the `mctx` won't change
+  -- We should not reset `lctx` because fvars introduced by
+  --   `AbstractMVars` are local to it
+  setMCtx st.mctx
+
+  let mkProof := match mkProof with
+  | some mkProof => mkProof
+  | none => fun _ _ _ _ =>
+    Lean.Meta.mkSorry c.toForallExpr (synthetic := true)
+  let proof := {
+    parents := proofParents,
+    ruleName := ruleName,
+    mkProof := mkProof,
+    mkSplitProof := mkSplitProof,
     transferExprs := transferExprs
   }
   return (c, proof)

@@ -80,9 +80,10 @@ def negateMClauseLit (c : MClause) (litIndex : Nat) : RuleM MClause := do
   | some c => return c
   | none => throwError "Invalid litIndex {litIndex}"
 
-def forwardContextualLiteralCuttingWithPartner (mainClauseWithNegatedLit : MClause) (mainClauseMVarIds : Array MVarId)
+def forwardContextualLiteralCuttingWithPartner (c : List SplitLit) (mainClauseWithNegatedLit : MClause) (mainClauseMVarIds : Array MVarId)
   (sideClause : Clause) (negatedLitIdx : Nat) : RuleM (Option (Clause × Proof)) :=
   withoutModifyingLoadedClauses do
+    if !(Clause.assertionSubset sideClause.assertions c) then return none
     let sideClause ← loadClause sideClause
     match ← subsumptionCheck' sideClause mainClauseWithNegatedLit mainClauseMVarIds with
     | some assignment =>
@@ -94,13 +95,14 @@ def forwardContextualLiteralCuttingWithPartner (mainClauseWithNegatedLit : MClau
 
 /-- Performs contextual literal cutting with c as the main clause -/
 def forwardContextualLiteralCutting (subsumptionTrie : SubsumptionTrie) : MSimpRule := fun c => do
+  let asserts := c.assertions
   let (cMVars, c) ← loadClauseCore c
   let cMVarIds := cMVars.map Expr.mvarId!
   for negatedLitIdx in [:c.lits.size] do
     let cWithNegatedLit ← negateMClauseLit c negatedLitIdx
     let potentialSideClauses ← subsumptionTrie.getPotentialSubsumingClauses' cWithNegatedLit
     for sideClause in potentialSideClauses do
-      if let some cp ← forwardContextualLiteralCuttingWithPartner cWithNegatedLit cMVarIds sideClause negatedLitIdx then
+      if let some cp ← forwardContextualLiteralCuttingWithPartner asserts cWithNegatedLit cMVarIds sideClause negatedLitIdx then
         return some #[cp]
   return none
 

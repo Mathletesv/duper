@@ -123,7 +123,7 @@ def generateDatatypeExhaustivenessFact (idt : Expr) (paramNames : Array Name) : 
         let cExp ← mkForallFVars (idtParams.push idtFVar) $ mkConst ``False
         let c := Clause.fromForallExpr paramNames cExp
         trace[duper.rule.datatypeExhaustiveness] "About to add {c} to passive set"
-        addNewToPassive c {parents := #[], ruleName := "datatypeExhaustiveness (empty inductive datatype)", mkProof := mkEmptyDatatypeExhaustivenessProof} maxGoalDistance 0 #[]
+        addNewToPassive c {parents := #[], ruleName := "datatypeExhaustiveness (empty inductive datatype)", mkProof := mkEmptyDatatypeExhaustivenessProof, mkSplitProof := none} maxGoalDistance 0 #[]
       | ctor1 :: restConstructors =>
         let mut cBody ← makeConstructorEquality idtFVar ctor1 lvls idtArgs
         for ctor in restConstructors do
@@ -132,7 +132,7 @@ def generateDatatypeExhaustivenessFact (idt : Expr) (paramNames : Array Name) : 
         let cExp ← mkForallFVars (idtParams.push idtFVar) cBody
         let c := Clause.fromForallExpr paramNames cExp
         trace[duper.rule.datatypeExhaustiveness] "About to add {c} to passive set"
-        addNewToPassive c {parents := #[], ruleName := "datatypeExhaustiveness", mkProof := mkDatatypeExhaustivenessProof} maxGoalDistance 0 #[]
+        addNewToPassive c {parents := #[], ruleName := "datatypeExhaustiveness", mkProof := mkDatatypeExhaustivenessProof, mkSplitProof := none} maxGoalDistance 0 #[]
 
 /-- For each inductive datatype in `inductiveDataTypes`, generates an exhaustiveness lemma
     (e.g. `∀ l : List Nat, l = [] ∨ ∃ n : Nat, ∃ l' : List Nat, l = n :: l'`) and adds it to the passive set -/
