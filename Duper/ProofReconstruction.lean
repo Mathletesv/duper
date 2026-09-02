@@ -94,7 +94,7 @@ deriving Inhabited
 def PRState.insertConstructedClauses (prs : PRState) (key : Nat × Array Level) (val : Expr) :=
   {prs with constructedClauses := prs.constructedClauses.insert key val}
 
-abbrev PRM := ReaderT PRContext <| StateRefT PRState CoreM
+abbrev PRM := ReaderT PRContext <| StateRefT PRState MetaM
 
 def PRM.addHole (lit : SplitLit) (id : MVarId) : PRM Unit := do
   modify fun s => {s with holes := s.holes.insert lit id}
@@ -115,8 +115,33 @@ def runMetaAsPRM {α} (x : MetaM α) : PRM α := do
   modify fun s => {s with mctx := state.mctx}
   return res
 
-def PRM.run (m : PRM α) (ctx : PRContext) (st : PRState) : CoreM (α × PRState) :=
+def PRM.run (m : PRM α) (ctx : PRContext) (st : PRState) : MetaM (α × PRState) :=
   StateRefT'.run (m ctx) st
+
+def withPRMNewCtx (extraFVars : Array Expr) (k : PRM Expr) : PRM Expr := do
+  let old ← get
+  let proof ← k
+  let prstate ← get
+  setMCtx prstate.mctx
+  let lctx := prstate.lctx
+  let fvars := extraFVars ++ prstate.fvars
+  let lambdaProof ← withLCtx lctx (← getLocalInstances) do
+    mkLambdaFVars (usedLetOnly := false) fvars proof
+  setMCtx old.mctx
+  modify fun _ => old
+  pure lambdaProof
+
+def withPRMLocalDeclD
+    (userName : Name) (type : Expr)
+    (k : Expr → PRM α) : PRM α := do
+  let old ← get
+  let fvarId ← mkFreshFVarId
+  let lctx := old.lctx.mkLocalDecl fvarId userName type
+  modify fun s => { s with lctx := lctx }
+  let result ← withLCtx' lctx do
+    k (mkFVar fvarId)
+  modify fun _ => old
+  pure result
 
 private instance : Inhabited TransformStep where
   default := TransformStep.continue
@@ -128,7 +153,7 @@ partial def PRM.matchSkolem : Expr → PRM TransformStep
   let skolemSorryName := (← read).pmstate.skolemSorryName
   if skName == skolemSorryName then
     let opqn := args[0]!
-    let lvls ← runMetaAsPRM <| RuleM.unWrapSort opqn
+    let lvls ← RuleM.unWrapSort opqn
     let .natVal skid := args[1]!.litValue!
       | throwError "PRM.matchSkolem :: Invalid skolem id!"
     let skTy := args[2]!
@@ -148,8 +173,7 @@ partial def PRM.matchSkolem : Expr → PRM TransformStep
       let fvarId ← mkFreshFVarId
       let userName := Name.num `skol skid
       PRM.mkLetDecl fvarId userName skTy skProof
-      runMetaAsPRM <| do
-        trace[duper.proofReconstruction] "Reconstructing skolem, {(mkFVar fvarId).dbgToString} ≡≡ {mkFVar fvarId} : {skTy} := {skProof}"
+      trace[duper.proofReconstruction] "Reconstructing skolem, {(mkFVar fvarId).dbgToString} ≡≡ {mkFVar fvarId} : {skTy} := {skProof}"
       modify fun s => {s with constructedSkolems := s.constructedSkolems.insert skid fvarId}
       let trailingArgs := args.extract 3 args.size
       let trailingArgs ← trailingArgs.mapM (fun e => Core.transform e PRM.matchSkolem)
@@ -199,17 +223,31 @@ Split-unsat pairs work the way parenthesis work, so the logic is very natural
 False is actually always reached before unsat, so the unsat rule should just be ignored
 -/
 
-partial def mkClauseProof : List Clause → List SplitLit → PRM Expr
-| [], _ => panic! "mkClauseProof :: empty clause list"
-| c :: cs, ps => do
+partial def mkClauseProof : List Clause → List SplitLit → Std.HashMap FVarId (Bool × FVarId) -> PRM Expr
+| [], _, _ => panic! "mkClauseProof :: empty clause list"
+| c :: cs, ps, fvs => do
   if !(Clause.assertionSubset c.assertions ps) && !(Clause.assertionSubset ps c.assertions) then
-    return ← mkClauseProof cs ps
+    return ← mkClauseProof cs ps fvs
+  trace[duper.proofReconstruction] "ps: {ps.length}, cs.assertions: {c.assertions.length}"
+  match c.assertions with
+  | [] => pure ()
+  | q :: _ =>
+    if fvs.contains q.id && (fvs.get! q.id).fst != q.sgn then
+      return ← mkClauseProof cs ps fvs
+    else pure ()
   let state := (← read).pmstate
   let reqs := (← read).reqs
   Core.checkMaxHeartbeats "mkClauseProof"
   let info ← getClauseInfo! state c
   if info.proof.ruleName == "unsat" then
-    return ← mkClauseProof cs ps
+    trace[duper.proofReconstruction] "Should maybe not be here"
+    return ← mkClauseProof cs ps fvs
+  -- match c.assertions with
+  -- | [] => pure ()
+  -- | q :: _ =>
+  --   if fvs.contains q.id && (fvs.get! q.id != q.sgn || info.proof.ruleName == "split") then
+  --     return ← mkClauseProof cs ps fvs
+  --   else pure ()
   let lvlreqs := reqs.get! info.number
   for (req, reqid) in lvlreqs.toList do
     trace[duper.proofReconstruction] "lvlReqs : {lvlreqs.toList}, req: {req}"
@@ -222,11 +260,10 @@ partial def mkClauseProof : List Clause → List SplitLit → PRM Expr
       let instantiatedParentParamSubst := parent.paramSubst.map (fun lvl => lvl.instantiateParams c.paramNames.toList req.toList)
       let parentPrfFvar := (← get).constructedClauses.get! (parentNumber, instantiatedParentParamSubst)
       parents := parents.push parentPrfFvar
-      runMetaAsPRM <| do
-        trace[duper.proofReconstruction] (
-          m!"Instantiating parent {parent.clause} ≡≡ {parent.expr} with " ++
-          m!"param subst {parent.clause.paramNames} ↦ {instantiatedParentParamSubst}"
-        )
+      trace[duper.proofReconstruction] (
+        m!"Instantiating parent {parent.clause} ≡≡ {parent.expr} with " ++
+        m!"param subst {parent.clause.paramNames} ↦ {instantiatedParentParamSubst}"
+      )
       let parentClause := parent.clause.instantiateLevelParamsArray parent.clause.paramNames instantiatedParentParamSubst
       let parentClause ← parentClause.mapMUpdateType (fun e => Core.transform e PRM.matchSkolem)
       parentClauses := parentClauses.push parentClause
@@ -240,76 +277,51 @@ partial def mkClauseProof : List Clause → List SplitLit → PRM Expr
     -- Now `parents[i] : info.proof.parents[i].toForallExpr`, for all `i`
     let instC := c.instantiateLevelParamsArray c.paramNames req
     let instC ← instC.mapMUpdateType (fun e => Core.transform e PRM.matchSkolem)
-    runMetaAsPRM <| do
-      trace[duper.proofReconstruction] (
-        m!"Reconstructing proof for #{info.number} " ++
-        m!": {instC.paramNames} ↦ {req} @ {instC}, Rule Name: {info.proof.ruleName}"
-      )
+    trace[duper.proofReconstruction] (
+      m!"Reconstructing proof for #{info.number} " ++
+      m!": {instC.paramNames} ↦ {req} @ {instC}, Rule Name: {info.proof.ruleName}"
+    )
     let newTarget := instC.toForallExpr
     if info.proof.ruleName == "split" then
       match c.assertions with
       | p :: _ =>
-        trace[duper.proofReconstruction] "Entering a split reconstruction"
+        if fvs.contains p.id then
+          modify fun ctrc => ctrc.insertConstructedClauses (info.number, req) (mkFVar (fvs.get! p.id).snd)
+          return ← mkClauseProof cs ps fvs
+        -- trace[duper.proofReconstruction] "Entering a split reconstruction"
         let some splitProof := info.proof.mkSplitProof
         | throwError "no split proof when necessary"
         let instTr := info.proof.transferExprs.map (fun e => e.instantiateLevelParamsArray c.paramNames req)
         let instTr ← instTr.mapM (fun e => Core.transform e PRM.matchSkolem)
-        let prf ← runMetaAsPRM <|
-          splitProof parents.toList instantiatedProofParents.toList instTr instC
+        let prf ← splitProof parents.toList instantiatedProofParents.toList instTr instC
         let split := prf
-        -- let h := split
-        -- let hb := newTarget
-        -- let hc ← sorry
-        -- let bodyOne ← mkClauseProof cs (p::ps)
-        -- let bodyTwo ← mkClauseProof cs ({p with sgn := !p.sgn}::ps)
+        let splitType ← inferType split
 
-              -- `split : b ∨ c`
-        let splitType ← runMetaAsPRM <| inferType split
-
-        trace[duper.proofReconstruction] "Got split: {split}"
-        let .app (.app (.const ``Or _) b) c := splitType
+        -- trace[duper.proofReconstruction] "Got split: {split}"
+        -- trace[duper.proofReconstruction] "Remaining: {cs}"
+        let .app (.app (.const ``Or _) c) b := splitType
           | throwError "split proof does not have type `Or _ _`"
         let falseTy := mkConst ``False
-        -- let caseOne ← withLocalDeclD `hb b fun hb => do
-        --     -- Make `hb` visible to the recursive proof search.
-        --     --
-        --     -- The recursive call sees:
-        --     --   ... hb : b
-        --     --   ⊢ False
-        --     --
-        --     -- and can itself create more local lets / split further.
-        --     let body ← mkClauseProof cs (p :: ps)
 
-        --     mkLambdaFVars #[hb] body
+        let caseOne ← withPRMLocalDeclD `hb b fun hb => do
+            withPRMNewCtx #[hb] do
+              let fvarId ← mkFreshFVarId
+              let declName := (Name.mkNum (Name.mkNum `clause info.number) reqid)
+              PRM.mkLetDecl fvarId declName b hb
+              modify fun ctrc => ctrc.insertConstructedClauses (info.number, req) (mkFVar fvarId)
+              mkClauseProof cs (p :: ps) (fvs.insert p.id (p.sgn, fvarId))
 
-        -- let caseTwo ← runMetaAsPRM <| do
-        --   withLocalDeclD `hc c fun hc => do
-        --     let body ← mkClauseProof cs ({p with sgn := !p.sgn} :: ps)
-
-        --     mkLambdaFVars #[hc] body
-        -- let caseOne ← runMetaAsPRM <| mkLambdaFVars #[hb] bodyOne
-        -- let caseTwo ← runMetaAsPRM <| mkLambdaFVars #[hc]
-        trace[duper.proofReconstruction] "Got b: {b}, c: {c}"
-        let caseOne ← runMetaAsPRM <| mkFreshExprMVar (← mkArrow b falseTy) .syntheticOpaque
-        runMetaAsPRM <| caseOne.mvarId!.assign (← runMetaAsPRM <| Meta.mkSorry (← mkArrow b falseTy) true)
-        let caseTwo ← runMetaAsPRM <| mkFreshExprMVar (← mkArrow c falseTy) .syntheticOpaque
-        runMetaAsPRM <| caseTwo.mvarId!.assign (← runMetaAsPRM <| Meta.mkSorry (← mkArrow b falseTy) true)
-        trace[duper.proofReconstruction] "Ready to elim: {split}, {caseOne}, {caseTwo}"
-        let proof ← runMetaAsPRM <| mkAppM ``Or.elim #[split, caseOne, caseTwo]
-        trace[duper.proofReconstruction] "Finished proving a split: {proof}"
+        let caseTwo ← withPRMLocalDeclD `hc c fun hc => do
+            withPRMNewCtx #[hc] do
+              let fvarId ← mkFreshFVarId
+              let declName := (Name.mkNum (Name.mkNum `clause info.number) reqid)
+              PRM.mkLetDecl fvarId declName c hc
+              modify fun ctrc => ctrc.insertConstructedClauses (info.number, req) (mkFVar fvarId)
+              mkClauseProof cs ({p with sgn := !p.sgn} :: ps) (fvs.insert p.id (!p.sgn, fvarId))
+        trace[duper.proofReconstruction] "Ready to Or.elim: {split}, {caseTwo}, {caseOne}"
+        let proof ← mkAppM ``Or.elim #[split, caseTwo, caseOne]
         return proof
       | _ => throwError "Created a split clause with no assertions!"
-      -- let hole ← runMetaAsPRM <| mkFreshExprMVar newTarget .syntheticOpaque
-      -- match c.assertions with
-      -- | p :: _ => PRM.addHole p hole.mvarId! -- get splitlit here
-      -- | _ => throwError "Created a split clause with no assertions!"
-      -- runMetaAsPRM <|
-      --   do trace[duper.proofReconstruction] "#{info.number} added as split clause"
-      -- -- Add the new proof to the local context
-      -- let fvarId ← mkFreshFVarId
-      -- let declName := (Name.mkNum (Name.mkNum `clause info.number) reqid)
-      -- PRM.mkLetDecl fvarId declName newTarget hole
-      -- modify fun ctrc => ctrc.insertConstructedClauses (info.number, req) (mkFVar fvarId)
     -- else if info.proof.ruleName == "unsat" then
     --   match parentClauses[0]!.assertions, parentClauses[1]!.assertions with
     --   | p :: _, q :: _ =>
@@ -322,23 +334,22 @@ partial def mkClauseProof : List Clause → List SplitLit → PRM Expr
       let instTr := info.proof.transferExprs.map (fun e => e.instantiateLevelParamsArray c.paramNames req)
       let instTr ← instTr.mapM (fun e => Core.transform e PRM.matchSkolem)
       let newProof ← (do
-        let prf ← runMetaAsPRM <|
-          info.proof.mkProof parents.toList instantiatedProofParents.toList instTr instC
+        let prf ← info.proof.mkProof parents.toList instantiatedProofParents.toList instTr instC
         if info.proof.ruleName != "assumption" then
           return prf
         else
           -- If the rule is "assumption", then there is no proofparent and
           --   we have to manually instantiate the universe mvars
           return prf.instantiateLevelParamsArray c.paramNames req)
-      runMetaAsPRM <|
-        do trace[duper.proofReconstruction] "#{info.number}'s newProof: {newProof}"
-      if cs == [] then return newProof
+      trace[duper.proofReconstruction] "#{info.number}'s newProof: {newProof}"
+      -- if cs == [] then return newProof
+      if c.lits.size == 0 then return newProof
       -- Add the new proof to the local context
       let fvarId ← mkFreshFVarId
       let declName := (Name.mkNum (Name.mkNum `clause info.number) reqid)
       PRM.mkLetDecl fvarId declName newTarget newProof
       modify fun ctrc => ctrc.insertConstructedClauses (info.number, req) (mkFVar fvarId)
-  mkClauseProof cs ps
+  mkClauseProof cs ps fvs
 
 partial def mkAllProof (state : ProverM.State) (cs : List Clause) : MetaM Expr := do
   let cs := Array.mk cs
@@ -350,7 +361,7 @@ partial def mkAllProof (state : ProverM.State) (cs : List Clause) : MetaM Expr :
   -- Other clauses
   let zeroLvlsForEmptyClause := emptyClause.paramNames.map (fun _ => Level.zero)
   let reqs ← collectLevelRequests state emptyClause zeroLvlsForEmptyClause Std.HashMap.emptyWithCapacity
-  let (e, prstate) ← (do mkClauseProof cs.toList []).run
+  let (e, prstate) ← (do mkClauseProof cs.toList [] {}).run
       {pmstate := state, reqs := reqs}
       {constructedClauses := Std.HashMap.emptyWithCapacity, constructedSkolems := Std.HashMap.emptyWithCapacity,
        lctx := ← getLCtx, mctx := ← getMCtx, localInstances := ← getLocalInstances, fvars := #[], holes := {}}

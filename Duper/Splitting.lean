@@ -8,7 +8,7 @@ open Lean
 open Lean.Meta
 
 register_option duper.split : Bool := {
-  defValue := false
+  defValue := true
   descr := "Whether to use splitting"
 }
 

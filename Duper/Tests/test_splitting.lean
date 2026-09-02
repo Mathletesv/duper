@@ -109,11 +109,11 @@ theorem cleanest_split2 (w x y z : Prop) (h1 : x) (h2 : y) (h3 : y = w) (h4 : x 
 
 -- theorem potentially_split (f : Int → Int → Prop) (x : Int) : f x 0 ∨ f x 1 :=
 
--- set_option duper.split true in
--- tptp' testingts "../CASC-30/THF/TNE/SEV244^6.p" by duper [*] {portfolioInstance := 9}
+set_option duper.split true in
+tptp' testingts "../CASC-30/THF/TNE/SEV244^6.p" by duper [*] {portfolioInstance := 9}
 
--- set_option duper.split true in
--- tptp' testingts "../CASC-30/THF/TEQ/AGT030^1.p" by duper [*] {portfolioInstance := 9}
+set_option duper.split true in
+tptp' testingts "../CASC-30/THF/TEQ/AGT030^1.p" by duper [*] {portfolioInstance := 9}
 
 -- set_option maxHeartbeats 2000000 in
 -- set_option duper.split true in
