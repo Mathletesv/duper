@@ -1,11 +1,14 @@
-import Lean
-import Duper.RuleM
+module
+
+public import Lean
+public import Duper.RuleM
+
+public section
 
 namespace Duper
 
 open Lean
 open RuleM
-open List
 open Expr
 
 initialize Lean.registerTraceClass `duper.subsumptionTrie.debug

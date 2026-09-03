@@ -1,14 +1,18 @@
-import Duper.Clause
-import Batteries.Data.BinomialHeap
-import Duper.Fingerprint
-import Duper.Selection
-import Duper.SubsumptionTrie
-import Duper.Util.ClauseSubsumptionCheck
-import Duper.Util.StrategyHeap
-import Duper.Util.IdStrategyHeap
-import Duper.Util.AbstractMVars
-import Duper.Util.DeeplyOccurringVars
-import Duper.Expr
+module
+
+public import Duper.Clause
+public import Batteries.Data.BinomialHeap
+public import Duper.Fingerprint
+public import Duper.Selection
+public import Duper.SubsumptionTrie
+public import Duper.Util.ClauseSubsumptionCheck
+public import Duper.Util.StrategyHeap
+public import Duper.Util.IdStrategyHeap
+public import Duper.Util.AbstractMVars
+public import Duper.Util.DeeplyOccurringVars
+public import Duper.Expr
+
+public section
 
 namespace Duper
 namespace ProverM
@@ -300,7 +304,7 @@ partial def addAssertionClause (c : Clause) : ProverM Unit := do
 def maxGoalDistance := 15
 
 partial def chooseGivenClause : ProverM (Option Clause) := do
-  Core.checkMaxHeartbeats "chooseGivenClause"
+  Core.checkSystem "chooseGivenClause"
   if let some (clause, heap) := (← getPassiveSet).pop? then
     setPassiveSet heap
     return (some clause)

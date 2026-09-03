@@ -1,6 +1,10 @@
-import Duper.Simp
-import Duper.Selection
-import Duper.Util.ProofReconstruction
+module
+
+public import Duper.Simp
+public import Duper.Selection
+public import Duper.Util.ProofReconstruction
+
+public section
 
 set_option linter.unusedVariables false
 
@@ -67,7 +71,7 @@ def mkDemodulationProof (sidePremiseLhs : LitSide) (mainPremisePos : ClausePos) 
 def forwardDemodulationWithPartner (mainPremise : MClause) (mainPremiseMVarIds : Array MVarId) (mainPremiseSubterm : Expr)
   (mainPremisePos : ClausePos) (sidePremise : MClause) (sidePremiseLhs : LitSide) :
   RuleM (Option (MClause × Option ProofReconstructor)) := do
-  Core.checkMaxHeartbeats "forward demodulation"
+  Core.checkSystem "forward demodulation"
   let sidePremiseLit := sidePremise.lits[0]!.makeLhs sidePremiseLhs
   if (mainPremise.lits[mainPremisePos.lit]!.sign) then
     let isMaximalLit ← mainPremise.isMaximalLit (← getOrder) true mainPremisePos.lit
@@ -135,7 +139,7 @@ def forwardDemodulation (sideIdx : RootCFPTrie) : MSimpRule := fun c => do
 -/
 def backwardDemodulationWithPartner (mainPremise : MClause) (mainPremiseMVarIds : Array MVarId) (mainPremiseSubterm : Expr)
   (mainPremisePos : ClausePos) (sidePremise : MClause) (sidePremiseLhs : LitSide) : RuleM (Option (Clause × Proof)) := do
-  Core.checkMaxHeartbeats "backward demodulation"
+  Core.checkSystem "backward demodulation"
   let sidePremiseLit := sidePremise.lits[0]!.makeLhs sidePremiseLhs
   if (mainPremise.lits[mainPremisePos.lit]!.sign) then
     let isMaximalLit ← mainPremise.isMaximalLit (← getOrder) true mainPremisePos.lit

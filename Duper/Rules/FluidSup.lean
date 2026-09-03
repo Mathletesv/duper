@@ -1,7 +1,11 @@
-import Duper.RuleM
-import Duper.Selection
-import Duper.Util.Misc
-import Duper.Util.ProofReconstruction
+module
+
+public import Duper.RuleM
+public import Duper.Selection
+public import Duper.Util.Misc
+public import Duper.Util.ProofReconstruction
+
+public section
 
 set_option linter.unusedVariables false
 
@@ -74,7 +78,7 @@ def mkFreshFunction (inputTy outputTy : Expr) : MetaM Expr :=
 def fluidSupWithPartner (mainPremise : MClause) (mainPremiseNum : Nat) (mainPremiseSubterm : Expr)
   (mainPremisePos : ClausePos) (mainPremiseEligibility : Eligibility) (sidePremise : MClause) (sidePremiseNum : Nat) (sidePremiseLitIdx : Nat)
   (sidePremiseSide : LitSide) (sidePremiseEligibility : Eligibility) (given : Clause) (givenIsMain : Bool) : RuleM (Array ClauseStream) := do
-  Core.checkMaxHeartbeats "fluidSup"
+  Core.checkSystem "fluidSup"
   withoutModifyingMCtx $ do
     let sidePremiseLit := sidePremise.lits[sidePremiseLitIdx]!.makeLhs sidePremiseSide
     let restOfSidePremise := sidePremise.eraseIdx sidePremiseLitIdx

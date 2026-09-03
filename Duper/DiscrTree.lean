@@ -1,5 +1,9 @@
-import Lean
-import Duper.RuleM
+module
+
+public import Lean
+public import Duper.RuleM
+
+public section
 
 /- This code is copied from Lean's Discrimination Trees, but the support for
 definitional equality has been removed. -/
@@ -358,7 +362,7 @@ private def getMatchRoot (d : DiscrTree α) (k : Key) (args : Array Expr) (resul
   | some c => getMatchLoop args c result
 
 private partial def getMatch' (d : DiscrTree α) (e : Expr) : RuleM (Array α) := do
-  Core.checkMaxHeartbeats "getMatch"
+  Core.checkSystem "getMatch"
   let result := getStarResult d
   let (k, args) ← getMatchKeyArgs e (root := true)
   match k with
@@ -372,7 +376,7 @@ partial def getMatch (d : DiscrTree (Clause × α)) (e : Expr) : RuleM (Array (C
   return Array.filter (fun c => not (filterSet.contains c.1)) unfiltered_result
 
 private partial def getUnify' (d : DiscrTree α) (e : Expr) : RuleM (Array α) := do
-  Core.checkMaxHeartbeats "getUnify"
+  Core.checkSystem "getUnify"
   let (k, args) ← getUnifyKeyArgs e (root := true)
   match k with
   | Key.star => d.root.foldlM (init := #[]) fun result k c => process k.arity #[] c result

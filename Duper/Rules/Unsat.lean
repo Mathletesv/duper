@@ -1,7 +1,11 @@
-import Duper.RuleM
-import Duper.ProverM
-import Duper.MClause
-import Duper.Util.ProofReconstruction
+module
+
+public import Duper.RuleM
+public import Duper.ProverM
+public import Duper.MClause
+public import Duper.Util.ProofReconstruction
+
+public section
 
 namespace Duper
 open RuleM

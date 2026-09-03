@@ -1,8 +1,12 @@
-import Duper.RuleM
-import Duper.Selection
-import Duper.Util.Misc
-import Duper.Util.ProofReconstruction
-import Duper.Expr
+module
+
+public import Duper.RuleM
+public import Duper.Selection
+public import Duper.Util.Misc
+public import Duper.Util.ProofReconstruction
+public import Duper.Expr
+
+public section
 
 set_option linter.unusedVariables false
 
@@ -163,7 +167,7 @@ def superpositionAtLitWithPartner (mainPremise : MClause) (mainPremiseNum : Nat)
   (mainPremisePos : ClausePos) (mainPremiseEligibility : Eligibility) (sidePremise : MClause) (sidePremiseNum : Nat)
   (sidePremiseLitIdx : Nat) (sidePremiseSide : LitSide) (sidePremiseEligibility : Eligibility) (given : Clause) (givenIsMain : Bool)
   (simultaneousSuperposition : Bool) : RuleM (Array ClauseStream) := do
-  Core.checkMaxHeartbeats "superposition"
+  Core.checkSystem "superposition"
   withoutModifyingMCtx $ do
     let sidePremiseLit := sidePremise.lits[sidePremiseLitIdx]!.makeLhs sidePremiseSide
     let restOfSidePremise := sidePremise.eraseIdx sidePremiseLitIdx

@@ -134,32 +134,33 @@ tptp' testingts "../CASC-30/THF/TEQ/AGT030^1.p" by duper [*] {portfolioInstance 
 -- set_option trace.duper.prover.saturate true in
 -- set_option duper.split true in
 -- set_option trace.duper.rule.split true in
--- theorem longest_split (x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 x13 x14 x15 x16 x17 x18 x19 x20
---   x21 x22 x23 x24 x25 x26 x27 x28 x29 x30 x31 x32 x33 x34 x35 x36 x37 x38 x39 x40
---   x41 x42 x43 x44 x45 x46 x47 x48 x49 x50 x51 x52 x53 x54 x55 x56 x57 x58 x59 x60
---   x61 x62 x63 x64 x65 x66 x67 x68 x69 x70 x71 x72 x73 x74 x75 x76 x77 x78 x79 x80
---   x81 x82 x83 x84 x85 x86 x87 x88 x89 x90 x91 x92 x93 x94 x95 x96 x97 x98 x99 x100 : Prop)
---   (h1 : x1) (h2 : x2) (h3 : x3) (h4 : x4) (h5 : x5) (h6 : x6) (h7 : x7) (h8 : x8)
---   (h9 : x9) (h10 : x10) (h11 : x11) (h12 : x12) (h13 : x13) (h14 : x14) (h15 : x15)
---   (h16 : x16) (h17 : x17) (h18 : x18) (h19 : x19) (h20 : x20) (h21 : x21) (h22 : x22)
---   (h23 : x23) (h24 : x24) (h25 : x25) (h26 : x26) (h27 : x27) (h28 : x28) (h29 : x29)
---   (h30 : x30) (h31 : x31) (h32 : x32) (h33 : x33) (h34 : x34) (h35 : x35) (h36 : x36)
---   (h37 : x37) (h38 : x38) (h39 : x39) (h40 : x40) (h41 : x41) (h42 : x42) (h43 : x43)
---   (h44 : x44) (h45 : x45) (h46 : x46) (h47 : x47) (h48 : x48) (h49 : x49) (h50 : x50)
---   (h51 : x51) (h52 : x52) (h53 : x53) (h54 : x54) (h55 : x55) (h56 : x56) (h57 : x57)
---   (h58 : x58) (h59 : x59) (h60 : x60) (h61 : x61) (h62 : x62) (h63 : x63) (h64 : x64)
---   (h65 : x65) (h66 : x66) (h67 : x67) (h68 : x68) (h69 : x69) (h70 : x70) (h71 : x71)
---   (h72 : x72) (h73 : x73) (h74 : x74) (h75 : x75) (h76 : x76) (h77 : x77) (h78 : x78)
---   (h79 : x79) (h80 : x80) (h81 : x81) (h82 : x82) (h83 : x83) (h84 : x84) (h85 : x85)
---   (h86 : x86) (h87 : x87) (h88 : x88) (h89 : x89) (h90 : x90) (h91 : x91) (h92 : x92)
---   (h93 : x93) (h94 : x94) (h95 : x95) (h96 : x96) (h97 : x97) (h98 : x98) (h99 : x99)
---   (h100 : x100)
---   : x1 ∧ x2 ∧ x3 ∧ x4 ∧ x5 ∧ x6 ∧ x7 ∧ x8 ∧ x9 ∧ x10 ∧
---     x11 ∧ x12 ∧ x13 ∧ x14 ∧ x15 ∧ x16 ∧ x17 ∧ x18 ∧ x19 ∧ x20 ∧
---     x21 ∧ x22 ∧ x23 ∧ x24 ∧ x25 ∧ x26 ∧ x27 ∧ x28 ∧ x29 ∧ x30 ∧
---     x31 ∧ x32 ∧ x33 ∧ x34 ∧ x35 ∧ x36 ∧ x37 ∧ x38 ∧ x39 ∧ x40 ∧
---     x41 ∧ x42 ∧ x43 ∧ x44 ∧ x45 ∧ x46 ∧ x47 ∧ x48 ∧ x49 ∧ x50 := by
---   duper [*]
+set_option trace.duper.printProof true in
+theorem longest_split (x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 x13 x14 x15 x16 x17 x18 x19 x20
+  x21 x22 x23 x24 x25 x26 x27 x28 x29 x30 x31 x32 x33 x34 x35 x36 x37 x38 x39 x40
+  x41 x42 x43 x44 x45 x46 x47 x48 x49 x50 x51 x52 x53 x54 x55 x56 x57 x58 x59 x60
+  x61 x62 x63 x64 x65 x66 x67 x68 x69 x70 x71 x72 x73 x74 x75 x76 x77 x78 x79 x80
+  x81 x82 x83 x84 x85 x86 x87 x88 x89 x90 x91 x92 x93 x94 x95 x96 x97 x98 x99 x100 : Prop)
+  (h1 : x1) (h2 : x2) (h3 : x3) (h4 : x4) (h5 : x5) (h6 : x6) (h7 : x7) (h8 : x8)
+  (h9 : x9) (h10 : x10) (h11 : x11) (h12 : x12) (h13 : x13) (h14 : x14) (h15 : x15)
+  (h16 : x16) (h17 : x17) (h18 : x18) (h19 : x19) (h20 : x20) (h21 : x21) (h22 : x22)
+  (h23 : x23) (h24 : x24) (h25 : x25) (h26 : x26) (h27 : x27) (h28 : x28) (h29 : x29)
+  (h30 : x30) (h31 : x31) (h32 : x32) (h33 : x33) (h34 : x34) (h35 : x35) (h36 : x36)
+  (h37 : x37) (h38 : x38) (h39 : x39) (h40 : x40) (h41 : x41) (h42 : x42) (h43 : x43)
+  (h44 : x44) (h45 : x45) (h46 : x46) (h47 : x47) (h48 : x48) (h49 : x49) (h50 : x50)
+  (h51 : x51) (h52 : x52) (h53 : x53) (h54 : x54) (h55 : x55) (h56 : x56) (h57 : x57)
+  (h58 : x58) (h59 : x59) (h60 : x60) (h61 : x61) (h62 : x62) (h63 : x63) (h64 : x64)
+  (h65 : x65) (h66 : x66) (h67 : x67) (h68 : x68) (h69 : x69) (h70 : x70) (h71 : x71)
+  (h72 : x72) (h73 : x73) (h74 : x74) (h75 : x75) (h76 : x76) (h77 : x77) (h78 : x78)
+  (h79 : x79) (h80 : x80) (h81 : x81) (h82 : x82) (h83 : x83) (h84 : x84) (h85 : x85)
+  (h86 : x86) (h87 : x87) (h88 : x88) (h89 : x89) (h90 : x90) (h91 : x91) (h92 : x92)
+  (h93 : x93) (h94 : x94) (h95 : x95) (h96 : x96) (h97 : x97) (h98 : x98) (h99 : x99)
+  (h100 : x100)
+  : x1 ∧ x2 ∧ x3 ∧ x4 ∧ x5 ∧ x6 ∧ x7 ∧ x8 ∧ x9 ∧ x10 ∧
+    x11 ∧ x12 ∧ x13 ∧ x14 ∧ x15 ∧ x16 ∧ x17 ∧ x18 ∧ x19 ∧ x20 ∧
+    x21 ∧ x22 ∧ x23 ∧ x24 ∧ x25 ∧ x26 ∧ x27 ∧ x28 ∧ x29 ∧ x30 ∧
+    x31 ∧ x32 ∧ x33 ∧ x34 ∧ x35 ∧ x36 ∧ x37 ∧ x38 ∧ x39 ∧ x40 ∧
+    x41 ∧ x42 ∧ x43 ∧ x44 ∧ x45 ∧ x46 ∧ x47 ∧ x48 ∧ x49 ∧ x50 := by
+  duper [*]
 
 -- needs 250 clauses without splitting
 -- 253 with

@@ -1,5 +1,9 @@
-import Lean
-import Duper.Util.Reduction
+module
+
+public import Lean
+public import Duper.Util.Reduction
+
+public section
 
 set_option linter.unusedVariables false
 
@@ -11,7 +15,7 @@ initialize Lean.registerTraceClass `duper.match.debug
     making any assignments to mvars that appear in protected_mvars).
     Returns true and performs mvar assignments if successful, returns false and does not perform any mvar assignments otherwise -/
 partial def Lean.Meta.performMatch (l : Array (Expr × Expr)) (protected_mvars : Array MVarId) : MetaM Bool := do
-  Core.checkMaxHeartbeats "match"
+  Core.checkSystem "match"
   let state ← saveState
   try
     trace[duper.match.debug] "About to attempt to match {l}"

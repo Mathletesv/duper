@@ -1,4 +1,8 @@
-import Lean
+module
+
+public import Lean
+
+public section
 
 set_option linter.unusedVariables false
 
@@ -6,7 +10,7 @@ open Lean
 open Lean.Meta
 
 partial def Lean.Meta.fastUnify (l : Array (Expr × Expr)) : MetaM Bool := do
-  Core.checkMaxHeartbeats "unify"
+  Core.checkSystem "unify"
   let state ← saveState
   try
     for (t, s) in l do
