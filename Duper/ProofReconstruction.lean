@@ -292,12 +292,14 @@ partial def mkClauseProof : List Clause → List SplitLit → Std.HashMap FVarId
         if fvs.contains p.id then
           modify fun ctrc => ctrc.insertConstructedClauses (info.number, req) (mkFVar (fvs.get! p.id).snd)
           return ← mkClauseProof cs ps fvs
-        -- trace[duper.proofReconstruction] "Entering a split reconstruction"
+        trace[duper.proofReconstruction] "Entering a split reconstruction"
         let some splitProof := info.proof.mkSplitProof
         | throwError "no split proof when necessary"
         let instTr := info.proof.transferExprs.map (fun e => e.instantiateLevelParamsArray c.paramNames req)
         let instTr ← instTr.mapM (fun e => Core.transform e PRM.matchSkolem)
+        trace[duper.proofReconstruction] "pre"
         let prf ← splitProof parents.toList instantiatedProofParents.toList instTr instC
+        trace[duper.proofReconstruction] "post"
         let split := prf
         let splitType ← inferType split
 
@@ -307,6 +309,7 @@ partial def mkClauseProof : List Clause → List SplitLit → Std.HashMap FVarId
           | throwError "split proof does not have type `Or _ _`"
         let falseTy := mkConst ``False
 
+        trace[duper.proofReconstruction] "Splitting on {c}, {b}"
         let caseOne ← withPRMLocalDeclD `hb b fun hb => do
             withPRMNewCtx #[hb] do
               let fvarId ← mkFreshFVarId

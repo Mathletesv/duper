@@ -225,6 +225,7 @@ def mkSplitClausesProof (c1Lits c2Lits : Array Lit) (premises : List Expr) (pare
   (transferExprs : Array Expr) (c : Clause) : MetaM Expr := do
   let combinedOr := mkApp2 (mkConst ``Or) (Clause.litsToExpr c1Lits.toList) (Clause.litsToExpr c2Lits.toList)
   let fullClause := c.bVarTypes.foldr (fun ty b => mkForall Name.anonymous BinderInfo.default ty b) combinedOr
+  trace[debug] "combinedOr: {combinedOr}, fullClause: {fullClause}"
   Meta.forallTelescope fullClause fun xs body => do
     let c1Lits := c1Lits.map (fun l => l.map (fun e => e.instantiateRev xs))
     let c2Lits := c2Lits.map (fun l => l.map (fun e => e.instantiateRev xs))
@@ -272,7 +273,7 @@ def splitWithLits (given : Clause) (c : MClause) (clusters : Std.HashMap Nat (St
     let mut clauses := []
     let mut litArrays := Array.mkEmpty 2
     for (rep, litIdxs) in clusters do
-      litArrays := litArrays.push $ (litIdxs.toArray).map (fun idx => c.lits[idx]!)
+      litArrays := litArrays.push $ (litIdxs.toArray).map (fun idx => given.lits[idx]!)
     let splitProof := mkSplitClausesProof litArrays[0]! litArrays[1]!
     let fvarId ← mkFreshFVarId
     let lctx' := (← getLCtx).mkLocalDecl fvarId (Name.mkSimple s!"p") (mkConst ``Bool)
@@ -298,38 +299,67 @@ def collectFVars (e : Expr) : RuleM (Array FVarId) := do
   | .forallE binderName binderType body _ => return (← collectFVars body)
   | .letE declName type value body _ => return (← collectFVars value) ++ (← collectFVars body)
   | .fvar fvarId => return #[fvarId]
+  -- | .bvar n => return #[.bvar n]
+  | _ =>
+    -- trace[duper.rule.split] "{e} is here"
+    return #[]
+
+def collectBVars (e : Expr) : RuleM (Array Nat) := do
+  -- trace[duper.rule.split] "Recursing on {e}"
+  match e with
+  -- | .const declName us => return #[declName]
+  | .bvar n => return #[n]
+  | .app fn arg => return (← collectBVars fn) ++ (← collectBVars arg)
+  | .lam binderName binderType body _ => return (← collectBVars body)
+  | .forallE binderName binderType body _ => return (← collectBVars body)
+  | .letE declName type value body _ => return (← collectBVars value) ++ (← collectBVars body)
   | _ =>
     -- trace[duper.rule.split] "{e} is here"
     return #[]
 
 def split (given : Clause) (c : MClause) (cNum : Nat) : RuleM (Array ClauseStream) := do
   trace[duper.rule.split] "Split inferences with {c.lits}"
-  if c.lits.size < 2 then return #[]
-  let mut constIn : Std.HashMap FVarId Nat := {}
-  let mut constUf := Batteries.UnionFind.mkEmpty c.lits.size
+  if given.lits.size < 2 then return #[]
+  let mut fvarIn : Std.HashMap FVarId Nat := {}
+  let mut bvarIn : Std.HashMap Nat Nat := {}
+  let mut constUf := Batteries.UnionFind.mkEmpty given.lits.size
   let mut streams := #[]
-  for _ in [:c.lits.size] do
+  for _ in [:given.lits.size] do
     constUf := constUf.push
-  for i in [:c.lits.size] do
-    let lhsConsts ← collectFVars c.lits[i]!.lhs
-    let rhsConsts ← collectFVars c.lits[i]!.rhs
+  for i in [:given.lits.size] do
+    let lhsConsts ← collectFVars given.lits[i]!.lhs
+    let rhsConsts ← collectFVars given.lits[i]!.rhs
     for name in lhsConsts do
-      if not (constIn.contains name) then
+      if not (fvarIn.contains name) then
         trace[duper.rule.split] "New name: {Expr.fvar name} in lit {i}"
-        constIn := constIn.insert name i
+        fvarIn := fvarIn.insert name i
       else
         trace[duper.rule.split] "Old name: {Expr.fvar name} in lit {i}"
-        constUf := constUf.union! (constIn[name]!) i
+        constUf := constUf.union! (fvarIn[name]!) i
     for name in rhsConsts do
-      if not (constIn.contains name) then
-        constIn := constIn.insert name i
+      if not (fvarIn.contains name) then
+        fvarIn := fvarIn.insert name i
         trace[duper.rule.split] "New name: {Expr.fvar name} in lit {i}"
       else
         trace[duper.rule.split] "Old name: {Expr.fvar name} in lit {i}"
-        constUf := constUf.union! (constIn[name]!) i
-    let mut last := -1
+        constUf := constUf.union! (fvarIn[name]!) i
+  for i in [:given.lits.size] do
+    trace[debug] "lit: {given.lits[i]!}"
+    let lhsConsts ← collectBVars given.lits[i]!.lhs
+    let rhsConsts ← collectBVars given.lits[i]!.rhs
+    trace[debug] "lhsConsts: {lhsConsts}, rhsConsts: {rhsConsts}"
+    for num in lhsConsts do
+      if not (bvarIn.contains num) then
+        bvarIn := bvarIn.insert num i
+      else
+        constUf := constUf.union! (bvarIn[num]!) i
+    for num in rhsConsts do
+      if not (bvarIn.contains num) then
+        bvarIn := bvarIn.insert num i
+      else
+        constUf := constUf.union! (bvarIn[num]!) i
   let mut parents := []
-  for i in [:c.lits.size] do
+  for i in [:given.lits.size] do
     if (constUf.find! i).snd == i then
       parents := i :: parents
   while parents.length > 2 do
@@ -340,7 +370,7 @@ def split (given : Clause) (c : MClause) (cNum : Nat) : RuleM (Array ClauseStrea
     | _ => break
   let mut clusters : Std.HashMap Nat (Std.HashSet Nat) := {}
   let mut rep := 0
-  for i in [:c.lits.size] do
+  for i in [:given.lits.size] do
     (constUf, rep) := constUf.find! i
     if not (clusters.contains rep) then
       clusters := clusters.insert rep { i }
